@@ -17,29 +17,57 @@ class BookParser:
         self.director = director or Director()
 
     def parse_epub_chapters(self, epub_path: str) -> List[Dict[str, Any]]:
-        """Discovers and orders chapter documents from an EPUB."""
+        """Discovers and orders chapter documents from an EPUB using NCX TOC when available."""
         chapters = []
         with zipfile.ZipFile(epub_path, 'r') as z:
-            namelist = z.namelist()
-            # Prioritize XHTML text documents
-            text_files = [f for f in namelist if f.endswith(('.xhtml', '.html', '.htm')) and not any(k in f.lower() for k in ['nav', 'toc', 'cover', 'titlepage', 'style', 'page_'])]
-            text_files.sort()
-            
-            # Simple automatic chapter grouping
-            for i, fpath in enumerate(text_files):
-                fname = os.path.basename(fpath)
-                chap_id = f"{i:02d}_{os.path.splitext(fname)[0]}"
-                chapters.append({
-                    "id": chap_id,
-                    "title": f"Chapter {i+1}: {os.path.splitext(fname)[0]}",
-                    "files": [fpath]
-                })
+            ncx_files = [f for f in z.namelist() if f.endswith('.ncx')]
+            if ncx_files:
+                ncx_content = z.read(ncx_files[0]).decode('utf-8', errors='ignore')
+                soup = BeautifulSoup(ncx_content, 'html.parser')
+                nav_map = soup.find('navmap')
+                if nav_map:
+                    top_navs = nav_map.find_all('navpoint', recursive=False)
+                    for nav in top_navs:
+                        nav_label_el = nav.find('navlabel')
+                        label = nav_label_el.get_text().strip() if nav_label_el else "Chapter"
+                        
+                        # Skip front/back matter
+                        if any(k in label.lower() for k in ['portada', 'contenido', 'ilustraciones', 'extra', 'traductor', 'ilustrador', 'frase final', 'título', 'titulo']):
+                            continue
+                            
+                        files = []
+                        for c in nav.find_all('content'):
+                            src = c.get('src', '').split('#')[0]
+                            for zf in z.namelist():
+                                if zf.endswith(src) and zf not in files:
+                                    files.append(zf)
+                                    
+                        if files:
+                            clean_id = f"{len(chapters):02d}_" + ''.join(c if c.isalnum() else '_' for c in label.lower())[:30].strip('_')
+                            chapters.append({'id': clean_id, 'title': label, 'files': files})
+
+            # Fallback if no NCX or no chapters parsed
+            if not chapters:
+                text_files = [f for f in z.namelist() if f.endswith(('.xhtml', '.html', '.htm')) and not any(k in f.lower() for k in ['nav', 'toc', 'cover', 'titlepage', 'style', 'page_'])]
+                text_files.sort()
+                for i, fpath in enumerate(text_files):
+                    fname = os.path.basename(fpath)
+                    chap_id = f"{i:02d}_{os.path.splitext(fname)[0]}"
+                    chapters.append({
+                        "id": chap_id,
+                        "title": f"Chapter {i+1}: {os.path.splitext(fname)[0]}",
+                        "files": [fpath]
+                    })
+
         return chapters
 
-    def parse_html_to_script(self, html_content: str, chapter_id: str, title: str, book_name: str = "Audiobook") -> ChapterScript:
-        soup = BeautifulSoup(html_content, 'html.parser')
-        raw_paragraphs = [p.get_text() for p in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5'])]
-        
+    def parse_html_to_script(self, html_contents: List[str], chapter_id: str, title: str, book_name: str = "Audiobook") -> ChapterScript:
+        raw_paragraphs = []
+        for html in html_contents:
+            soup = BeautifulSoup(html, 'html.parser')
+            for p in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5']):
+                raw_paragraphs.append(p.get_text())
+
         segments = []
         seg_id = 1
         last_speaker = "Narrador"

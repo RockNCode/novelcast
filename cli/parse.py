@@ -25,23 +25,23 @@ def parse_book(
 
     console.print(f"[bold yellow]📖 Parsing eBook:[/bold yellow] [cyan]{book_path}[/cyan]...")
 
+    chapters_meta = parser.parse_epub_chapters(book_path)
+    total_chapters = len(chapters_meta)
+    total_segments = 0
+    total_dialogues = 0
+
     with zipfile.ZipFile(book_path, 'r') as z:
-        # Detect all html/xhtml documents
-        namelist = z.namelist()
-        text_files = [f for f in namelist if f.endswith(('.xhtml', '.html', '.htm')) and not any(k in f.lower() for k in ['nav', 'toc', 'cover', 'titlepage', 'style', 'page_'])]
-        text_files.sort()
+        for cinfo in chapters_meta:
+            chap_id = cinfo["id"]
+            chap_title = cinfo["title"]
+            files = cinfo["files"]
 
-        total_chapters = len(text_files)
-        total_segments = 0
-        total_dialogues = 0
+            html_contents = []
+            for fpath in files:
+                if fpath in z.namelist():
+                    html_contents.append(z.read(fpath).decode('utf-8', errors='ignore'))
 
-        for i, fpath in enumerate(text_files):
-            fname = os.path.basename(fpath)
-            chap_id = f"{i:02d}_{os.path.splitext(fname)[0]}"
-            chap_title = f"{book_name} - Chapter {i+1}"
-            
-            content = z.read(fpath).decode('utf-8', errors='ignore')
-            script = parser.parse_html_to_script(content, chapter_id=chap_id, title=chap_title, book_name=book_name)
+            script = parser.parse_html_to_script(html_contents, chapter_id=chap_id, title=chap_title, book_name=book_name)
 
             out_path = os.path.join(output_dir, f"{chap_id}.json")
             with open(out_path, "w", encoding="utf-8") as f:
