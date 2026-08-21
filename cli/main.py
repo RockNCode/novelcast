@@ -13,7 +13,7 @@ console = Console()
 
 app = typer.Typer(
     name="novelcast",
-    help="🎙️ NovelCast: The Open-Source Multi-Voice AI Audiobook Studio for Light Novels & Fiction",
+    help="NovelCast: Multi-Voice AI Audiobook Studio for Light Novels and Fiction",
     add_completion=False,
     no_args_is_help=True
 )
@@ -22,11 +22,11 @@ app = typer.Typer(
 app.command("init", help="Initialize a new NovelCast audiobook project workspace")(init_project)
 app.command("parse", help="Extract and segment eBook dialogue and narration into chapter scripts")(parse_book)
 app.add_typer(voices_app, name="voices")
-app.command("generate", help="Synthesize speech audio chunks with multi-worker GPU acceleration & caching")(generate_script)
+app.command("generate", help="Synthesize speech audio chunks with multi-worker GPU acceleration and caching")(generate_script)
 app.command("stitch", help="Stitch audio chunks into continuous chapter tracks with smart pause timing")(stitch_script)
-app.command("package", help="Package stitched chapters into a master M4B audiobook with chapters & cover art")(package_audiobook)
-app.command("run", help="⚡ Run the complete end-to-end pipeline in a single command")(run_pipeline)
-app.command("serve", help="Start the NovelCast Studio REST API for future Web/Desktop GUIs")(serve_api)
+app.command("package", help="Package stitched chapters into a master M4B audiobook with chapters and cover art")(package_audiobook)
+app.command("run", help="Run the complete end-to-end pipeline in a single command")(run_pipeline)
+app.command("serve", help="Start the NovelCast Studio REST API for Web/Desktop GUIs")(serve_api)
 
 @app.callback()
 def main_callback():

@@ -38,7 +38,7 @@ def test_voice(
     speaker: str = typer.Argument(..., help="Character name to test"),
     text: str = typer.Option("Hola, esto es una prueba de voz con NovelCast.", "--text", "-t", help="Text to speak"),
     engine_name: str = typer.Option("omnivoice", "--engine", "-e", help="TTS Engine (omnivoice, cosyvoice, kokoro, elevenlabs)"),
-    remote_url: Optional[str] = typer.Option("http://192.168.0.180:9880/synthesize", "--remote", "-r", help="Remote GPU server URL"),
+    remote_url: Optional[str] = typer.Option(None, "--remote", "-r", help="Remote GPU server URL. If omitted, runs local model."),
     output: str = typer.Option("output/voice_test.mp3", "--output", "-o", help="Output audio file path"),
     config: str = typer.Option("voice_config.json", "--config", "-c", help="Path to voice_config.json")
 ):

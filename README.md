@@ -1,4 +1,4 @@
-# 🎙️ NovelCast: Multi-Voice AI Audiobook Studio
+# NovelCast: Multi-Voice AI Audiobook Studio
 
 <p align="center">
   <b>The Open-Source Multi-Voice AI Audiobook Studio for Light Novels, Fiction & Dramatized Audiobooks.</b>
@@ -13,56 +13,83 @@
 
 ---
 
-## 🌟 Why NovelCast?
+## Overview
 
-Most audiobook tools read books with a **single flat voice**. Full-cast audiobooks are immersive, but traditionally take hundreds of studio recording hours.
+Most audiobook tools read books with a single flat narrator voice. Full-cast audiobooks provide an immersive listening experience, but traditionally require hundreds of studio recording hours.
 
-**NovelCast** automates the entire journey from an eBook (EPUB, TXT) to a **broadcast-quality multi-voice, dramatized `.m4b` audiobook**:
+**NovelCast** automates the end-to-end production workflow from an eBook (EPUB, TXT) to a high-quality multi-voice `.m4b` audiobook:
 
-- 🎭 **Smart Character Casting & Dialogue Segmentation**: Detects character dialogue vs. narrative prose with emotional context prompts (`[laughter]`, `[whisper]`, `[gasp]`, `[groan]`).
-- ⚡ **Pluggable Multi-TTS Engine**:
-  - **OmniVoice**: Ultra-expressive voice cloning with Dual-GPU remote acceleration.
-  - **CosyVoice / CosyVoice 3**: State-of-the-art multilingual zero-shot voice cloning.
-  - **Kokoro-82M**: Fast, lightweight local CPU/GPU fallback.
+- **Smart Character Casting & Dialogue Segmentation**: Automatically detects character dialogue versus narrative prose with context-aware emotion prompts.
+- **Pluggable TTS Engines**:
+  - **OmniVoice (Local & Remote)**: Voice cloning running directly on local NVIDIA GPUs (Windows/Linux) or offloaded to a remote GPU server.
+  - **CosyVoice / CosyVoice 3**: Zero-shot multilingual voice cloning.
+  - **Kokoro-82M**: Fast, lightweight on-device CPU/Metal fallback for any machine.
   - **ElevenLabs**: Cloud API integration.
-- 🔄 **Chunk-Level SHA-256 Deduplication**: Edit a single line or fix a voice without re-synthesizing the entire book.
-- 🎧 **Smart Conversational Audio Stitching**: Natural inter-speaker pause insertion (monologue vs. dialogue transitions vs. scene breaks) and LUFS loudness leveling.
-- 📦 **Master Packaging**: Creates standard `.m4b` files with embedded high-res cover art and chapter navigation markers.
-- 🖥️ **CLI & Future GUI Ready**: Modular Python SDK with a built-in REST API server for future Web/Desktop GUI interfaces.
+- **Chunk-Level SHA-256 Deduplication**: Edit a single line or modify a character's voice without re-synthesizing unchanged sections.
+- **Conversational Audio Stitching**: Natural inter-speaker pause insertion and LUFS loudness normalization.
+- **Master Packaging**: Produces standard `.m4b` containers with embedded high-resolution cover art and chapter navigation markers.
+- **CLI & REST API Architecture**: Clean Python package with a built-in FastAPI server for future Web and Desktop GUI interfaces.
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1. Installation
 
 ```bash
-git clone https://github.com/your-username/novelcast.git
+git clone https://github.com/RockNCode/novelcast.git
 cd novelcast
 
 # Create virtual environment
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install NovelCast with CLI support
 pip install -e .
 ```
 
-### 2. Run End-to-End in One Command
+---
 
+### 2. Running Synthesis
+
+NovelCast supports both local on-device GPU inference and remote server offloading:
+
+#### A. Local Execution (Windows / Linux with NVIDIA GPU)
+If you have an NVIDIA GPU, install PyTorch with CUDA and run locally without needing a server:
+```bash
+pip install torch torchaudio omnivoice
+
+# Run full pipeline locally in one command
+novelcast run "book.epub" \
+  --title "My Audiobook" \
+  --author "Author Name" \
+  --engine omnivoice \
+  --cover "cover.jpg" \
+  --output "output/My_Audiobook.m4b"
+```
+
+#### B. Remote GPU Server Offloading (Mac or Distributed Workflows)
+If you are on a Mac or want to offload compute to a dedicated multi-GPU machine:
 ```bash
 novelcast run "book.epub" \
-  --title "Re:Zero Volume 2" \
-  --author "Tappei Nagatsuki" \
+  --title "My Audiobook" \
+  --author "Author Name" \
   --engine omnivoice \
   --remote "http://192.168.0.180:9880/synthesize" \
+  --workers 4 \
   --cover "cover.jpg" \
-  --output "output/Re_Zero_Vol_02.m4b"
+  --output "output/My_Audiobook.m4b"
+```
+
+#### C. On-Device Lightweight Fallback (CPU / Apple Silicon)
+No GPU or server required:
+```bash
+novelcast run "book.epub" --engine kokoro --output "output/My_Audiobook.m4b"
 ```
 
 ---
 
-## 🛠️ CLI Subcommands
+## CLI Subcommands
 
 NovelCast provides modular subcommands for full control over every stage of production:
 
@@ -72,7 +99,7 @@ NovelCast provides modular subcommands for full control over every stage of prod
 | `novelcast parse <book.epub>` | Parse eBook into structured chapter JSON scripts |
 | `novelcast voices list` | Display character voice casting table and reference audio |
 | `novelcast voices test <name>` | Synthesize a live test audio clip for any character voice |
-| `novelcast generate <dir>` | Batch synthesize audio chunks with live GPU progress bars |
+| `novelcast generate <dir>` | Batch synthesize audio chunks with progress reporting |
 | `novelcast stitch <dir>` | Combine audio chunks into seamless chapter MP3 tracks |
 | `novelcast package <dir>` | Package chapters into a master `.m4b` audiobook |
 | `novelcast serve` | Start the REST API server for Web & Desktop GUIs |
@@ -83,13 +110,13 @@ NovelCast provides modular subcommands for full control over every stage of prod
 # List all character voice profiles
 novelcast voices list
 
-# Test Emilia's voice with a sample phrase
+# Test a character's voice with a sample phrase
 novelcast voices test "Emilia" --text "Hola Subaru, qué bueno verte despierto."
 ```
 
 ---
 
-## 🏛️ Architecture
+## Architecture
 
 ```mermaid
 graph TD
@@ -98,9 +125,9 @@ graph TD
     D[Voice Bank & Character Cast] --> E[TTS Synthesis Engine]
     C --> E
     subgraph "Pluggable TTS Engines"
-        E1[OmniVoice Remote / Local]
+        E1[OmniVoice: Local CUDA / Remote Server]
         E2[CosyVoice 3]
-        E3[Kokoro-82M Local]
+        E3[Kokoro-82M: Local CPU/Metal]
         E4[ElevenLabs API]
     end
     E --> E1
@@ -115,7 +142,7 @@ graph TD
 
 ---
 
-## ⚙️ Voice Configuration (`voice_config.json`)
+## Voice Configuration (`voice_config.json`)
 
 Character profiles are defined with instruct prompts, speed, and reference audio clips for cloning:
 
@@ -153,17 +180,17 @@ Character profiles are defined with instruct prompts, speed, and reference audio
 
 ---
 
-## 🖥️ Future GUI Roadmap
+## Future GUI Roadmap
 
-NovelCast includes a built-in REST API server (`novelcast serve`) designed to power a future **Web Studio & Desktop App**:
+NovelCast includes a built-in REST API server (`novelcast serve`) designed to power a future Web Studio and Desktop App:
 
-- 📝 **Visual Script Editor**: Interactive line-by-line dialogue viewer.
-- 🎙️ **Click-to-Audition**: Click any sentence to play its audio chunk immediately.
-- 🔄 **Instant Line Re-Take**: Change character speaker attribution or emotional prompt and regenerate in milliseconds.
-- 📊 **Live Waveform & Timeline Visualization**.
+- **Visual Script Editor**: Interactive line-by-line dialogue viewer.
+- **Click-to-Audition**: Click any sentence to play its audio chunk immediately.
+- **Instant Line Re-Take**: Change character speaker attribution or emotional prompt and regenerate in milliseconds.
+- **Waveform & Timeline Visualization**.
 
 ---
 
-## 📄 License
+## License
 
 NovelCast is licensed under the [MIT License](LICENSE).

@@ -14,7 +14,7 @@ def run_pipeline(
     title: str = typer.Option("NovelCast Audiobook", "--title", "-t", help="Book title"),
     author: str = typer.Option("Author", "--author", "-a", help="Author name"),
     engine_name: str = typer.Option("omnivoice", "--engine", "-e", help="TTS Engine (omnivoice, cosyvoice, kokoro, elevenlabs)"),
-    remote_url: Optional[str] = typer.Option("http://192.168.0.180:9880/synthesize", "--remote", "-r", help="Remote GPU server URL"),
+    remote_url: Optional[str] = typer.Option(None, "--remote", "-r", help="Remote GPU server URL. If omitted, runs local OmniVoice model."),
     workers: int = typer.Option(4, "--workers", "-w", help="Number of concurrent generation workers"),
     cover: Optional[str] = typer.Option(None, "--cover", "-c", help="Path to cover art image (jpg/png)"),
     output_m4b: str = typer.Option("output/Master_Audiobook.m4b", "--output", "-o", help="Path for the output master M4B audiobook"),

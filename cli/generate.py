@@ -13,7 +13,7 @@ console = Console()
 def generate_script(
     target: str = typer.Argument(..., help="Path to script JSON file or directory containing scripts"),
     engine_name: str = typer.Option("omnivoice", "--engine", "-e", help="TTS Engine (omnivoice, cosyvoice, kokoro, elevenlabs)"),
-    remote_url: Optional[str] = typer.Option("http://192.168.0.180:9880/synthesize", "--remote", "-r", help="Remote GPU server URL"),
+    remote_url: Optional[str] = typer.Option(None, "--remote", "-r", help="Remote GPU server URL. If omitted, runs local OmniVoice model."),
     workers: int = typer.Option(4, "--workers", "-w", help="Number of concurrent generation workers"),
     cache_dir: str = typer.Option("cache_omnivoice", "--cache", "-c", help="Directory for chunk audio cache"),
     voice_config: str = typer.Option("voice_config.json", "--voice-config", "-v", help="Path to voice config JSON")
