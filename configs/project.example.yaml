@@ -1,0 +1,34 @@
+# NovelCast Project Configuration
+project_name: "Re:Zero Volume 2"
+language: "es"  # Language code (es, en, ja, zh, etc.)
+
+# Default TTS Engine Settings
+engine:
+  name: "omnivoice"  # omnivoice, cosyvoice, kokoro, elevenlabs
+  remote_url: "http://192.168.0.180:9880/synthesize"  # Leave empty for local execution
+  workers: 4
+  guidance_scale: 2.8
+  default_speed: 1.0
+
+# Pauses configuration (milliseconds)
+pauses:
+  same_speaker_ms: 300
+  speaker_change_ms: 450
+  scene_break_ms: 1000
+  chapter_title_ms: 1200
+
+# Packaging and Audio Output
+audio:
+  bitrate: "128k"
+  sample_rate: 44100
+  channels: 1  # 1 for mono, 2 for stereo
+  normalize_lufs: -16.0
+  format: "m4b"  # m4b, mp3
+
+# Paths relative to project root
+paths:
+  scripts_dir: "data/scripts"
+  cache_dir: "cache_omnivoice"
+  output_dir: "output"
+  voice_bank_dir: "voice_bank"
+  cover_image: "cover.jpg"

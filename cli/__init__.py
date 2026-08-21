@@ -1,0 +1,3 @@
+"""
+NovelCast CLI package.
+"""

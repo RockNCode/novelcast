@@ -1,0 +1,77 @@
+{
+  "default_narrator": "Narrador",
+  "characters": {
+    "Narrador": {
+      "gender": "male",
+      "description": "Narrador principal, tono cinematográfico y envolvente",
+      "instruct": null,
+      "speed": 1.0,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 500,
+      "reference_audio": "voice_bank/narrator.wav"
+    },
+    "Subaru": {
+      "gender": "male",
+      "description": "Protagonista expresivo, enérgico, desesperado o juguetón",
+      "instruct": "male, teenager, moderate pitch",
+      "speed": 1.0,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 400,
+      "reference_audio": "voice_bank/subaru.wav"
+    },
+    "Emilia": {
+      "gender": "female",
+      "description": "Chica de cabello plateado, dulce, noble y cristalina",
+      "instruct": "female, young adult, high pitch",
+      "speed": 1.0,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 400,
+      "reference_audio": "voice_bank/emilia.wav"
+    },
+    "Rem": {
+      "gender": "female",
+      "description": "Sirvienta de cabello azul, voz suave, devota y cariñosa",
+      "instruct": "female, whisper, young adult",
+      "speed": 1.0,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 400,
+      "reference_audio": "voice_bank/rem.wav"
+    },
+    "Ram": {
+      "gender": "female",
+      "description": "Sirvienta de cabello rosa, voz distante, sarcástica y segura",
+      "instruct": "female, young adult, moderate pitch",
+      "speed": 0.95,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 400,
+      "reference_audio": "voice_bank/ram.wav"
+    },
+    "Beatrice": {
+      "gender": "female",
+      "description": "Gran espíritu de la biblioteca, arrogante, loli tsundere",
+      "instruct": "female, child, high pitch",
+      "speed": 1.0,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 400,
+      "reference_audio": "voice_bank/beatrice.wav"
+    },
+    "Roswaal": {
+      "gender": "male",
+      "description": "Señor de la mansión, excéntrico, cadencia teatral y estirada",
+      "instruct": "male, middle-aged, low pitch",
+      "speed": 0.95,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 450,
+      "reference_audio": "voice_bank/roswaal.wav"
+    },
+    "Puck": {
+      "gender": "female",
+      "description": "Espíritu felino, voz aguda, juguetona e inteligente",
+      "instruct": "female, child, high pitch",
+      "speed": 1.0,
+      "guidance_scale": 2.8,
+      "pause_after_ms": 400,
+      "reference_audio": "voice_bank/puck.wav"
+    }
+  }
+}

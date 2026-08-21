@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novelcast"
+version = "0.1.0"
+description = "The Open-Source Multi-Voice AI Audiobook Studio for Light Novels & Fiction"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "NovelCast Team" }
+]
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "beautifulsoup4>=4.12.0",
+    "pydub>=0.25.1",
+    "requests>=2.31.0",
+    "pyyaml>=6.0"
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.22.0"
+]
+
+[project.scripts]
+novelcast = "novelcast.cli.main:app"
+
+[tool.setuptools.package-dir]
+novelcast = "."
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli*", "core*", "engines*", "server*"]

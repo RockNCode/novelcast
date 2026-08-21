@@ -1,0 +1,61 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+venv*/
+.venv/
+env/
+ENV/
+
+# IDE & OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# NovelCast Cache & Output Artifacts
+cache/
+cache_*/
+output/
+scratch/
+*.m4b
+*.mp3
+*.wav
+*.aac
+
+# Secrets & API Keys
+api_keys
+.env
+*.key
