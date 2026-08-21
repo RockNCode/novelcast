@@ -6,6 +6,7 @@ from typing import List, Optional, Callable
 from novelcast.engines.base import BaseTTSEngine
 from novelcast.core.schema import Segment, ChapterScript
 from novelcast.core.voice_bank import VoiceBank
+from novelcast.core.director import sanitize_instruct
 
 class OmniVoiceEngine(BaseTTSEngine):
     """
@@ -34,7 +35,8 @@ class OmniVoiceEngine(BaseTTSEngine):
         if not os.path.exists(ref_audio):
             return False
 
-        instruct = segment.instruct or char_info.instruct or ""
+        raw_instruct = segment.instruct or char_info.instruct or ""
+        instruct = sanitize_instruct(raw_instruct) or ""
         guidance = segment.guidance_scale if segment.guidance_scale != 2.8 else char_info.guidance_scale
         speed = segment.speed if segment.speed != 1.0 else char_info.speed
 

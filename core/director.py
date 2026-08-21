@@ -13,7 +13,7 @@ def sanitize_instruct(instruct_str: Optional[str]) -> Optional[str]:
     """Filters instruct string to ensure only valid model tokens are passed."""
     if not instruct_str:
         return None
-    tokens = [t.strip() for t in instruct_str.split(",") if t.strip()]
+    tokens = [t.strip().lower() for t in instruct_str.split(",") if t.strip()]
     valid = [t for t in tokens if t in VALID_INSTRUCT_TAGS]
     return ", ".join(valid) if valid else None
 
