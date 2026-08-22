@@ -103,7 +103,7 @@ class Qwen3TTSEngine(BaseTTSEngine):
                 if instruct:
                     data["instruct"] = instruct
 
-                resp = requests.post(self.remote_url, data=data, files=files, timeout=120)
+                resp = requests.post(self.remote_url, data=data, files=files, timeout=360)
 
             if resp.status_code == 200:
                 temp_wav = os.path.join(self.cache_dir, f"temp_{segment.audio_hash or 'chunk'}.wav")

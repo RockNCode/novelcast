@@ -55,6 +55,19 @@ class VoiceBank:
             reference_audio=ref
         )
 
+    def auto_discover_voices(self):
+        """Scans voice_bank_dir and registers any discovered audio files."""
+        if os.path.exists(self.voice_bank_dir):
+            for fname in os.listdir(self.voice_bank_dir):
+                name, ext = os.path.splitext(fname)
+                if ext.lower() in [".wav", ".mp3", ".flac", ".m4a"]:
+                    char_name = name.capitalize().replace("_", " ")
+                    if char_name not in self.config.characters:
+                        self.config.characters[char_name] = CharacterVoice(
+                            description=f"Discovered voice: {char_name}",
+                            reference_audio=os.path.join(self.voice_bank_dir, fname)
+                        )
+
     def add_character(self, name: str, voice: CharacterVoice):
         if not voice.reference_audio:
             voice.reference_audio = self._find_ref_audio(name)

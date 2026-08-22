@@ -8,6 +8,7 @@ from novelcast.cli.stitch import stitch_script
 from novelcast.cli.package import package_audiobook
 from novelcast.cli.run import run_pipeline
 from novelcast.cli.serve import serve_api
+from novelcast.cli.dub import dub_audiobook
 
 console = Console()
 
@@ -26,6 +27,7 @@ app.command("generate", help="Synthesize speech audio chunks with multi-worker G
 app.command("stitch", help="Stitch audio chunks into continuous chapter tracks with smart pause timing")(stitch_script)
 app.command("package", help="Package stitched chapters into a master M4B audiobook with chapters and cover art")(package_audiobook)
 app.command("run", help="Run the complete end-to-end pipeline in a single command")(run_pipeline)
+app.command("dub", help="Translate and dub an existing audiobook while cloning original voices and tone")(dub_audiobook)
 app.command("serve", help="Start the NovelCast Studio REST API for Web/Desktop GUIs")(serve_api)
 
 @app.callback()

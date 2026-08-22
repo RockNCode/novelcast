@@ -102,6 +102,7 @@ NovelCast provides modular subcommands for full control over every stage of prod
 | `novelcast generate <dir>` | Batch synthesize audio chunks with progress reporting |
 | `novelcast stitch <dir>` | Combine audio chunks into seamless chapter MP3 tracks |
 | `novelcast package <dir>` | Package chapters into a master `.m4b` audiobook |
+| `novelcast dub <audio.m4b>` | Translate and dub an existing audiobook while cloning original voices |
 | `novelcast serve` | Start the REST API server for Web & Desktop GUIs |
 
 ### Auditioning Character Voices

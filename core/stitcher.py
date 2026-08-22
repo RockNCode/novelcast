@@ -19,9 +19,11 @@ class AudioStitcher:
         output_path: str,
         normalize_db: Optional[float] = -16.0
     ) -> bool:
-        combined = AudioSegment.empty()
+        chunks: List[AudioSegment] = []
         last_speaker = None
-        stitched_count = 0
+        target_sample_rate = 24000
+        target_channels = 1
+        target_sample_width = 2
 
         for idx, (seg, apath) in enumerate(zip(script.segments, audio_files)):
             if not apath or not os.path.exists(apath) or os.path.getsize(apath) < 100:
@@ -29,6 +31,9 @@ class AudioStitcher:
 
             try:
                 chunk_audio = AudioSegment.from_file(apath)
+                # Standardize format for fast raw data concatenation
+                if chunk_audio.frame_rate != target_sample_rate or chunk_audio.channels != target_channels or chunk_audio.sample_width != target_sample_width:
+                    chunk_audio = chunk_audio.set_frame_rate(target_sample_rate).set_channels(target_channels).set_sample_width(target_sample_width)
             except Exception:
                 continue
 
@@ -41,16 +46,22 @@ class AudioStitcher:
                 else:
                     pause_ms = self.pauses.speaker_change_ms
 
-                combined += AudioSegment.silent(duration=pause_ms)
+                silent_chunk = AudioSegment.silent(duration=pause_ms, frame_rate=target_sample_rate)
+                if silent_chunk.channels != target_channels or silent_chunk.sample_width != target_sample_width:
+                    silent_chunk = silent_chunk.set_channels(target_channels).set_sample_width(target_sample_width)
+                chunks.append(silent_chunk)
 
-            combined += chunk_audio
+            chunks.append(chunk_audio)
             last_speaker = seg.speaker
-            stitched_count += 1
 
-        if len(combined) == 0:
+        if not chunks:
             return False
 
-        if normalize_db is not None:
+        # Fast O(N) concatenation
+        raw_combined = b"".join(c.raw_data for c in chunks)
+        combined = chunks[0]._spawn(raw_combined)
+
+        if normalize_db is not None and combined.dBFS != float("-inf"):
             change_in_gain = normalize_db - combined.dBFS
             combined = combined.apply_gain(change_in_gain)
 
