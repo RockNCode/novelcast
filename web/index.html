@@ -141,7 +141,16 @@
             <p class="panel-desc">Assign clean audio reference samples and emotion presets to each character in the novel.</p>
           </div>
           <div class="casting-actions">
-            <button id="btnRefreshVoices" class="btn btn-secondary"><span>🔄</span> Refresh Bank</button>
+            <span id="detectedCharBadge" class="status-pill info">Scanning characters...</span>
+            <button id="btnAutoDetectCharacters" class="btn btn-accent">
+              <span>🔍</span> Auto-Detect Characters
+            </button>
+            <button id="btnSaveVoiceCasting" class="btn btn-secondary">
+              <span>💾</span> Save Casting
+            </button>
+            <button id="btnRefreshVoices" class="btn btn-secondary">
+              <span>🔄</span> Refresh Bank
+            </button>
           </div>
         </div>
 

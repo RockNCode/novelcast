@@ -456,6 +456,9 @@ def get_voices():
         "default_voice": vb.config.default_narrator or "narrador.wav"
     }
 
+class BatchCastRequest(BaseModel):
+    assignments: Dict[str, str]
+
 @app.post("/api/voices/assign")
 def assign_character_voice(req: AssignVoiceRequest):
     """Assigns a reference audio sample to a character."""
@@ -471,6 +474,74 @@ def assign_character_voice(req: AssignVoiceRequest):
     )
     vb.save()
     return {"success": True, "character": req.character, "voice_file": req.voice_file}
+
+@app.get("/api/projects/{project_id}/characters")
+def detect_project_characters(project_id: str):
+    """
+    Auto-detects all characters, speaker dialogue counts, and sample quotes
+    from the project's scripts, matching them against VoiceBank reference files.
+    """
+    from novelcast.core.character_detector import CharacterDetector
+    pinfo = resolve_project_dir(project_id)
+    scripts_dir = pinfo["path"]
+    
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    vb.auto_discover_voices()
+    detector = CharacterDetector(voice_bank=vb)
+
+    scripts = []
+    if os.path.exists(scripts_dir):
+        for f in sorted(os.listdir(scripts_dir)):
+            if f.endswith(".json"):
+                with open(os.path.join(scripts_dir, f), "r", encoding="utf-8") as fp:
+                    scripts.append(ChapterScript(**json.load(fp)))
+
+    detected = detector.detect_from_scripts(scripts)
+    
+    samples = []
+    if os.path.exists("voice_bank"):
+        for root, _, files in os.walk("voice_bank"):
+            for f in sorted(files):
+                if f.endswith((".wav", ".mp3", ".flac", ".m4a")):
+                    rel_path = os.path.relpath(os.path.join(root, f), "voice_bank")
+                    samples.append({
+                        "name": rel_path,
+                        "label": os.path.splitext(os.path.basename(f))[0].replace("_", " ").title(),
+                        "audio_url": f"/api/audio/sample?name={rel_path}"
+                    })
+
+    return {
+        "project_id": project_id,
+        "characters": detected,
+        "available_samples": samples
+    }
+
+@app.post("/api/projects/{project_id}/cast_all")
+def batch_cast_characters(project_id: str, req: BatchCastRequest):
+    """Batch updates voice assignments for multiple characters in one shot."""
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    
+    updated_count = 0
+    for char_name, voice_file in req.assignments.items():
+        if not voice_file:
+            continue
+        char_key = char_name.title()
+        ref_path = os.path.join("voice_bank", voice_file)
+        
+        existing = vb.get_character(char_key)
+        gender = existing.gender if existing else ("male" if char_name in ["Narrador", "Subaru", "Roswaal"] else "female")
+        instruct = existing.instruct if existing else None
+        
+        vb.config.characters[char_key] = CharacterVoice(
+            gender=gender,
+            instruct=instruct,
+            description=f"Cast voice: {voice_file}",
+            reference_audio=ref_path if os.path.exists(ref_path) else voice_file
+        )
+        updated_count += 1
+        
+    vb.save()
+    return {"success": True, "updated_characters": updated_count}
 
 # ─────────────────────────────────────────────────────────────
 # 5. Audio Streaming

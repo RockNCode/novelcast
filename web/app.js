@@ -51,6 +51,9 @@ class NovelCastStudio {
     // Tab 2: Voice Casting
     this.castCardsGrid = document.getElementById('castCardsGrid');
     this.btnRefreshVoices = document.getElementById('btnRefreshVoices');
+    this.btnAutoDetectCharacters = document.getElementById('btnAutoDetectCharacters');
+    this.btnSaveVoiceCasting = document.getElementById('btnSaveVoiceCasting');
+    this.detectedCharBadge = document.getElementById('detectedCharBadge');
 
     // Tab 3: M4B Packaging
     this.txtBookTitle = document.getElementById('txtBookTitle');
@@ -205,8 +208,10 @@ class NovelCastStudio {
     // Single Chapter Stitch
     this.btnStitchActiveChapter.addEventListener('click', () => this.stitchActiveChapter());
 
-    // Voice Bank Refresh
+    // Voice Bank Actions
     this.btnRefreshVoices.addEventListener('click', () => this.loadVoiceBank());
+    this.btnAutoDetectCharacters.addEventListener('click', () => this.detectProjectCharacters());
+    this.btnSaveVoiceCasting.addEventListener('click', () => this.saveBatchVoiceCasting());
 
     // Pause Timing Sliders
     this.sliderSpeakerChange.addEventListener('input', (e) => {
@@ -876,55 +881,79 @@ class NovelCastStudio {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Voice Casting Deck
+  // Voice Casting & Character Discovery
   // ─────────────────────────────────────────────────────────────
   async loadVoiceBank() {
+    await this.detectProjectCharacters();
+  }
+
+  async detectProjectCharacters() {
+    this.detectedCharBadge.className = 'status-pill info';
+    this.detectedCharBadge.textContent = 'Scanning characters in book...';
     try {
-      const resp = await fetch('/api/voices');
+      const resp = await fetch(`/api/projects/${this.state.activeProject}/characters`);
       const data = await resp.json();
-      this.state.voices = data.voices || {};
+      this.state.detectedCharacters = data.characters || [];
       this.state.availableSamples = data.available_samples || [];
-      this.renderVoiceCastingDeck();
+
+      this.renderDetectedCharacters(this.state.detectedCharacters);
+      this.detectedCharBadge.className = 'status-pill online';
+      this.detectedCharBadge.textContent = `✓ Detected ${this.state.detectedCharacters.length} Characters`;
     } catch (e) {
-      console.error('Failed to load voice bank:', e);
+      console.error('Failed to detect characters:', e);
+      this.detectedCharBadge.className = 'status-pill offline';
+      this.detectedCharBadge.textContent = 'Character scan failed';
     }
   }
 
-  renderVoiceCastingDeck() {
+  renderDetectedCharacters(characters) {
     this.castCardsGrid.innerHTML = '';
-    const sampleOptions = this.state.availableSamples.map(s => `<option value="${s.name}">${s.name} (${s.size_kb} KB)</option>`).join('');
+    
+    const sampleOptions = this.state.availableSamples.map(s => {
+      return `<option value="${s.name}">${s.name} (${s.label})</option>`;
+    }).join('');
 
-    const characters = ['Narrador', 'Subaru', 'Emilia', 'Roswaal', 'Beatrice', 'Rem', 'Ram', 'Puck'];
     characters.forEach(char => {
-      const cLower = char.toLowerCase();
-      const voiceConfig = this.state.voices[cLower] || {};
-      const currentSample = voiceConfig.description || `${cLower}.wav`;
+      const cLower = char.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const assigned = char.assigned_voice || char.suggested_voice || 'narrador.wav';
+      const pctText = char.pct_of_dialogue ? ` • ${char.pct_of_dialogue}% of dialogue` : '';
 
       const card = document.createElement('div');
       card.className = 'cast-card';
       card.innerHTML = `
         <div class="cast-card-top">
-          <span class="cast-name">${char}</span>
-          <span class="speaker-badge speaker-${cLower}">${char}</span>
+          <div class="cast-name-group">
+            <span class="cast-name">${this.escapeHtml(char.name)}</span>
+            <span class="char-dialogue-badge">${char.dialogue_count} lines${pctText}</span>
+          </div>
+          <span class="speaker-badge speaker-${cLower}">${this.escapeHtml(char.name)}</span>
         </div>
+
+        <div class="char-quote-box">
+          "${this.escapeHtml(char.sample_quote)}"
+        </div>
+
         <div class="form-group">
-          <label>Assigned Reference Voice:</label>
-          <select class="studio-select cast-sample-select" data-char="${char}">
+          <label>Reference Voice Sample:</label>
+          <select class="studio-select cast-sample-select" data-char="${this.escapeHtml(char.name)}">
             ${sampleOptions}
           </select>
         </div>
+
         <div class="cast-audio-row">
-          <button class="btn-icon btn-audition-sample" title="Play Voice Sample" data-sample="${currentSample}">
+          <button class="btn-icon btn-audition-sample" title="Audition Reference Voice">
             ▶
           </button>
-          <span class="sample-name">${currentSample}</span>
+          <span class="sample-name">${assigned}</span>
         </div>
       `;
 
       const select = card.querySelector('.cast-sample-select');
-      select.value = currentSample;
-      select.addEventListener('change', async (e) => {
-        await this.assignVoice(char, e.target.value);
+      select.value = assigned;
+
+      const sampleNameSpan = card.querySelector('.sample-name');
+      select.addEventListener('change', (e) => {
+        sampleNameSpan.textContent = e.target.value;
       });
 
       const btnAudition = card.querySelector('.btn-audition-sample');
@@ -932,8 +961,8 @@ class NovelCastStudio {
         const sampleUrl = `/api/audio/sample?name=${encodeURIComponent(select.value)}`;
         this.audioPlayer.src = sampleUrl;
         this.audioPlayer.play();
-        this.playerSpeaker.textContent = char;
-        this.playerLineText.textContent = `Auditioning Voice: ${select.value}`;
+        this.playerSpeaker.textContent = char.name;
+        this.playerLineText.textContent = `Auditioning voice clip: ${select.value}`;
         this.btnPlayPause.textContent = '⏸';
       });
 
@@ -941,15 +970,29 @@ class NovelCastStudio {
     });
   }
 
-  async assignVoice(character, voiceFile) {
+  async saveBatchVoiceCasting() {
+    this.btnSaveVoiceCasting.textContent = '⚙ Saving...';
     try {
-      await fetch('/api/voices/assign', {
+      const assignments = {};
+      document.querySelectorAll('.cast-sample-select').forEach(sel => {
+        const charName = sel.getAttribute('data-char');
+        assignments[charName] = sel.value;
+      });
+
+      const resp = await fetch(`/api/projects/${this.state.activeProject}/cast_all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ character, voice_file: voiceFile })
+        body: JSON.stringify({ assignments })
       });
+
+      const data = await resp.json();
+      this.btnSaveVoiceCasting.innerHTML = '<span>💾</span> Save Casting';
+      if (data.success) {
+        alert(`✓ Voice casting updated for ${data.updated_characters} character(s)!`);
+      }
     } catch (e) {
-      console.error('Failed to assign voice:', e);
+      this.btnSaveVoiceCasting.innerHTML = '<span>💾</span> Save Casting';
+      alert('Failed to save voice casting.');
     }
   }
 
