@@ -71,18 +71,42 @@ class PackageM4BRequest(BaseModel):
     bitrate: str = "128k"
 
 # ─────────────────────────────────────────────────────────────
-# Helper Utilities
+# Helper Utilities & Project Registry
 # ─────────────────────────────────────────────────────────────
 PROJECT_DIRS = {
     "vol2": {"name": "Re:Zero Vol 2", "path": "data/scripts", "cache": "cache_omnivoice", "output": "output/volume_2"},
     "vol3": {"name": "Re:Zero Vol 3", "path": "data/scripts_vol3", "cache": "cache_omnivoice", "output": "output/volume_3"},
     "dub": {"name": "Mushoku Tensei Dub", "path": "workspace_dub/scripts", "cache": "workspace_dub/cache_omnivoice", "output": "workspace_dub/chapters_audio"}
 }
+PROJECTS_REGISTRY_FILE = "projects.json"
+
+def get_all_projects_registry() -> Dict[str, Dict[str, str]]:
+    projects = dict(PROJECT_DIRS)
+    if os.path.exists(PROJECTS_REGISTRY_FILE):
+        try:
+            with open(PROJECTS_REGISTRY_FILE, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+                projects.update(custom)
+        except Exception:
+            pass
+    return projects
+
+def save_custom_project(project_id: str, project_info: Dict[str, str]):
+    custom = {}
+    if os.path.exists(PROJECTS_REGISTRY_FILE):
+        try:
+            with open(PROJECTS_REGISTRY_FILE, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+        except Exception:
+            custom = {}
+    custom[project_id] = project_info
+    with open(PROJECTS_REGISTRY_FILE, "w", encoding="utf-8") as f:
+        json.dump(custom, f, ensure_ascii=False, indent=2)
 
 def resolve_project_dir(project_id: str) -> Dict[str, str]:
-    if project_id in PROJECT_DIRS:
-        return PROJECT_DIRS[project_id]
-    # Check if direct path was passed
+    all_p = get_all_projects_registry()
+    if project_id in all_p:
+        return all_p[project_id]
     if os.path.exists(project_id):
         return {"name": os.path.basename(project_id), "path": project_id, "cache": "cache_omnivoice", "output": "output"}
     raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
@@ -131,7 +155,8 @@ def get_engine_status(remote_url: str = "http://192.168.0.180:9880/synthesize"):
 def list_projects():
     """Lists all available audiobook projects in workspace."""
     results = []
-    for pid, pinfo in PROJECT_DIRS.items():
+    all_p = get_all_projects_registry()
+    for pid, pinfo in all_p.items():
         exists = os.path.exists(pinfo["path"])
         ch_count = len([f for f in os.listdir(pinfo["path"]) if f.endswith(".json")]) if exists else 0
         results.append({
@@ -141,9 +166,125 @@ def list_projects():
             "cache_dir": pinfo["cache"],
             "output_dir": pinfo["output"],
             "chapters_count": ch_count,
-            "exists": exists
+            "exists": exists,
+            "is_custom": pid not in PROJECT_DIRS
         })
     return results
+
+@app.post("/api/projects/create")
+async def create_project(
+    name: str = Form(...),
+    project_type: str = Form("epub"),
+    author: Optional[str] = Form("Author"),
+    file: Optional[UploadFile] = File(None),
+    local_path: Optional[str] = Form(None)
+):
+    """
+    Creates a new project, parses uploaded or local EPUB files into chapter scripts,
+    extracts cover art, and registers it in the studio project list.
+    """
+    import zipfile
+    import shutil
+    import re
+    from novelcast.core.parser import BookParser
+
+    # Generate slug ID
+    slug = re.sub(r'[^a-zA-Z0-9_]', '_', name.lower()).strip('_')
+    if not slug:
+        slug = f"project_{int(time.time())}"
+
+    proj_dir = os.path.join("projects", slug)
+    scripts_dir = os.path.join(proj_dir, "data", "scripts")
+    output_dir = os.path.join(proj_dir, "output")
+    cache_dir = os.path.join(proj_dir, "cache_omnivoice")
+    
+    os.makedirs(scripts_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(cache_dir, exist_ok=True)
+
+    target_book_path = None
+
+    # 1. Handle file upload or local path
+    if file and file.filename:
+        upload_path = os.path.join(proj_dir, file.filename)
+        with open(upload_path, "wb") as f_out:
+            shutil.copyfileobj(file.file, f_out)
+        target_book_path = upload_path
+    elif local_path and os.path.exists(local_path):
+        target_book_path = local_path
+
+    chapters_parsed = 0
+    total_segments = 0
+
+    # 2. Parse EPUB if provided
+    if target_book_path and target_book_path.lower().endswith(".epub"):
+        parser = BookParser()
+        chapters_meta = parser.parse_epub_chapters(target_book_path)
+        
+        with zipfile.ZipFile(target_book_path, 'r') as z:
+            # Extract cover art if present
+            for zname in z.namelist():
+                if any(k in zname.lower() for k in ['cover', 'portada', '000', '01.jpg', '001']) and zname.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    cover_dest = os.path.join(output_dir, "cover.jpg")
+                    with open(cover_dest, "wb") as cf:
+                        cf.write(z.read(zname))
+                    break
+
+            for cinfo in chapters_meta:
+                chap_id = cinfo["id"]
+                chap_title = cinfo["title"]
+                files = cinfo["files"]
+
+                html_contents = []
+                for fpath in files:
+                    if fpath in z.namelist():
+                        html_contents.append(z.read(fpath).decode('utf-8', errors='ignore'))
+
+                script = parser.parse_html_to_script(html_contents, chapter_id=chap_id, title=chap_title, book_name=name)
+                
+                out_path = os.path.join(scripts_dir, f"{chap_id}.json")
+                with open(out_path, "w", encoding="utf-8") as f_out:
+                    json.dump(script.model_dump(), f_out, ensure_ascii=False, indent=2)
+
+                chapters_parsed += 1
+                total_segments += len(script.segments)
+
+    # 3. Register in project registry
+    pinfo = {
+        "name": name,
+        "author": author or "Author",
+        "path": scripts_dir,
+        "cache": cache_dir,
+        "output": output_dir,
+        "type": project_type
+    }
+    save_custom_project(slug, pinfo)
+
+    return {
+        "success": True,
+        "project_id": slug,
+        "name": name,
+        "chapters_count": chapters_parsed,
+        "total_segments": total_segments,
+        "scripts_dir": scripts_dir
+    }
+
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: str):
+    """Deletes a custom project from the registry."""
+    if not os.path.exists(PROJECTS_REGISTRY_FILE):
+        raise HTTPException(status_code=404, detail="No custom projects found")
+
+    with open(PROJECTS_REGISTRY_FILE, "r", encoding="utf-8") as f:
+        custom = json.load(f)
+
+    if project_id in custom:
+        del custom[project_id]
+        with open(PROJECTS_REGISTRY_FILE, "w", encoding="utf-8") as f:
+            json.dump(custom, f, ensure_ascii=False, indent=2)
+        return {"success": True, "deleted": project_id}
+
+    raise HTTPException(status_code=404, detail="Project not found in registry")
 
 @app.get("/api/scripts/{project_id}")
 def list_chapters(project_id: str):
@@ -370,6 +511,71 @@ def stream_chapter_audio(project_id: str, chapter_id: str):
 # ─────────────────────────────────────────────────────────────
 # 6. Batch Generation, Stitching & M4B Packaging Actions
 # ─────────────────────────────────────────────────────────────
+class GenerateTaskRequest(BaseModel):
+    project_id: str
+    chapter_id: Optional[str] = None
+    engine: str = "omnivoice"
+    mode: str = "remote"
+    remote_url: Optional[str] = "http://192.168.0.180:9880/synthesize"
+    workers: int = 4
+
+@app.post("/api/tasks/generate")
+def batch_generate_audio(req: GenerateTaskRequest):
+    """Batch synthesizes speech audio chunks for a chapter or entire project with multi-worker acceleration."""
+    pinfo = resolve_project_dir(req.project_id)
+    scripts_dir = pinfo["path"]
+    cache_dir = pinfo["cache"]
+
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    vb.auto_discover_voices()
+    
+    remote_url = req.remote_url if req.mode == "remote" else None
+    engine = get_engine(req.engine, remote_url=remote_url, cache_dir=cache_dir, workers=req.workers)
+
+    target_files = []
+    if req.chapter_id:
+        target_files = [f"{req.chapter_id}.json" if not req.chapter_id.endswith(".json") else req.chapter_id]
+    else:
+        target_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
+
+    total_chunks = 0
+    generated_chunks = 0
+    cached_chunks = 0
+
+    for tf in target_files:
+        s_path = os.path.join(scripts_dir, tf)
+        if not os.path.exists(s_path):
+            continue
+        with open(s_path, "r", encoding="utf-8") as fp:
+            s_data = json.load(fp)
+            cscript = ChapterScript(**s_data)
+
+        missing_segs = []
+        for s in cscript.segments:
+            cpath = engine.get_cache_path(s)
+            total_chunks += 1
+            if os.path.exists(cpath) and os.path.getsize(cpath) > 100:
+                cached_chunks += 1
+            else:
+                missing_segs.append(s)
+
+        if missing_segs:
+            sub_script = ChapterScript(
+                title=cscript.title,
+                book=cscript.book,
+                chapter_id=cscript.chapter_id,
+                segments=missing_segs
+            )
+            success = engine.synthesize_chapter(sub_script, vb)
+            if success:
+                generated_chunks += len(missing_segs)
+
+    return {
+        "success": True,
+        "total_chunks": total_chunks,
+        "newly_generated": generated_chunks,
+        "already_cached": cached_chunks
+    }
 @app.post("/api/tasks/stitch")
 def stitch_project_chapter(req: StitchRequest):
     """Stitches chapter scripts into MP3 tracks."""

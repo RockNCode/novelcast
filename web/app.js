@@ -7,6 +7,7 @@ class NovelCastStudio {
     this.state = {
       activeProject: 'vol2',
       activeChapter: null,
+      projectsList: [],
       chaptersList: [],
       segments: [],
       voices: {},
@@ -16,6 +17,7 @@ class NovelCastStudio {
       activeLineIndex: -1,
       continuousPlay: true,
       isPlaying: false,
+      selectedNewProjectType: 'epub'
     };
 
     this.audioPlayer = document.getElementById('globalAudioPlayer');
@@ -27,6 +29,7 @@ class NovelCastStudio {
   initElements() {
     // Top Nav & Mode Switcher
     this.projectSelect = document.getElementById('projectSelect');
+    this.btnOpenNewProjectModal = document.getElementById('btnOpenNewProjectModal');
     this.btnModeRemote = document.getElementById('btnModeRemote');
     this.btnModeLocal = document.getElementById('btnModeLocal');
     this.engineStatusBadge = document.getElementById('engineStatusBadge');
@@ -40,6 +43,7 @@ class NovelCastStudio {
     this.statCached = document.getElementById('statCached');
     this.scriptSearch = document.getElementById('scriptSearch');
     this.btnSaveScript = document.getElementById('btnSaveScript');
+    this.btnSynthesizeChapter = document.getElementById('btnSynthesizeChapter');
     this.btnStitchActiveChapter = document.getElementById('btnStitchActiveChapter');
     this.scriptRowsContainer = document.getElementById('scriptRowsContainer');
 
@@ -57,6 +61,7 @@ class NovelCastStudio {
     this.valSpeakerChange = document.getElementById('valSpeakerChange');
     this.sliderSameSpeaker = document.getElementById('sliderSameSpeaker');
     this.valSameSpeaker = document.getElementById('valSameSpeaker');
+    this.btnSynthesizeAllChapters = document.getElementById('btnSynthesizeAllChapters');
     this.btnStitchAllChapters = document.getElementById('btnStitchAllChapters');
     this.btnPackageMasterM4B = document.getElementById('btnPackageMasterM4B');
     this.chapterChecklistContainer = document.getElementById('chapterChecklistContainer');
@@ -81,6 +86,21 @@ class NovelCastStudio {
     this.playerSeek = document.getElementById('playerSeek');
     this.chkContinuousPlay = document.getElementById('chkContinuousPlay');
     this.playbackRate = document.getElementById('playbackRate');
+
+    // New Project Modal Elements
+    this.modalNewProject = document.getElementById('modalNewProject');
+    this.btnCloseModal = document.getElementById('btnCloseModal');
+    this.btnCancelModal = document.getElementById('btnCancelModal');
+    this.modalProjName = document.getElementById('modalProjName');
+    this.modalProjAuthor = document.getElementById('modalProjAuthor');
+    this.modalFileInput = document.getElementById('modalFileInput');
+    this.selectedFileName = document.getElementById('selectedFileName');
+    this.modalLocalPath = document.getElementById('modalLocalPath');
+    this.modalParsingFeedback = document.getElementById('modalParsingFeedback');
+    this.btnCreateProjectSubmit = document.getElementById('btnCreateProjectSubmit');
+    this.typeCards = document.querySelectorAll('.type-card');
+    this.epubDropzone = document.getElementById('epubDropzone');
+    this.epubUploadGroup = document.getElementById('epubUploadGroup');
   }
 
   bindEvents() {
@@ -97,6 +117,35 @@ class NovelCastStudio {
       this.state.activeProject = e.target.value;
       this.loadProject();
     });
+
+    // New Project Modal Triggers
+    this.btnOpenNewProjectModal.addEventListener('click', () => this.openNewProjectModal());
+    this.btnCloseModal.addEventListener('click', () => this.closeNewProjectModal());
+    this.btnCancelModal.addEventListener('click', () => this.closeNewProjectModal());
+
+    // Modal Project Type Switcher
+    this.typeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        this.typeCards.forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        this.state.selectedNewProjectType = card.getAttribute('data-type');
+        this.epubUploadGroup.style.display = (this.state.selectedNewProjectType === 'blank') ? 'none' : 'flex';
+      });
+    });
+
+    // File Dropzone Handlers
+    this.modalFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        this.selectedFileName.textContent = `Selected: ${e.target.files[0].name}`;
+        if (!this.modalProjName.value) {
+          const cleanName = e.target.files[0].name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
+          this.modalProjName.value = cleanName;
+        }
+      }
+    });
+
+    // Submit New Project
+    this.btnCreateProjectSubmit.addEventListener('click', () => this.submitCreateProject());
 
     // Engine Mode Toggle (Remote vs Local)
     this.btnModeRemote.addEventListener('click', () => this.setEngineMode('remote'));
@@ -115,6 +164,10 @@ class NovelCastStudio {
 
     // Save Edits
     this.btnSaveScript.addEventListener('click', () => this.saveScriptEdits());
+
+    // Batch Synthesis
+    this.btnSynthesizeChapter.addEventListener('click', () => this.synthesizeActiveChapter());
+    this.btnSynthesizeAllChapters.addEventListener('click', () => this.synthesizeAllChapters());
 
     // Single Chapter Stitch
     this.btnStitchActiveChapter.addEventListener('click', () => this.stitchActiveChapter());
@@ -160,10 +213,131 @@ class NovelCastStudio {
   async initApp() {
     await this.checkEngineHealth();
     await this.loadVoiceBank();
-    await this.loadProject();
+    await this.loadProjectsList();
 
     // Poll engine health every 15s
     setInterval(() => this.checkEngineHealth(), 15000);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Projects List & Project Loading
+  // ─────────────────────────────────────────────────────────────
+  async loadProjectsList(selectProjectId = null) {
+    try {
+      const resp = await fetch('/api/projects');
+      this.state.projectsList = await resp.json();
+
+      this.projectSelect.innerHTML = '';
+      this.state.projectsList.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.name} (${p.chapters_count} ch)`;
+        this.projectSelect.appendChild(opt);
+      });
+
+      if (selectProjectId && this.state.projectsList.some(p => p.id === selectProjectId)) {
+        this.state.activeProject = selectProjectId;
+      } else if (!this.state.activeProject && this.state.projectsList.length) {
+        this.state.activeProject = this.state.projectsList[0].id;
+      }
+
+      this.projectSelect.value = this.state.activeProject;
+      await this.loadProject();
+    } catch (e) {
+      console.error('Failed to load projects list:', e);
+    }
+  }
+
+  async loadProject() {
+    this.chapterSelect.innerHTML = '<option>Loading chapters...</option>';
+    try {
+      const resp = await fetch(`/api/scripts/${this.state.activeProject}`);
+      this.state.chaptersList = await resp.json();
+
+      this.chapterSelect.innerHTML = '';
+      if (!this.state.chaptersList.length) {
+        this.chapterSelect.innerHTML = '<option>No chapters found</option>';
+        this.scriptRowsContainer.innerHTML = '<div class="loading-state"><p>No chapters in this project.</p></div>';
+        return;
+      }
+
+      this.state.chaptersList.forEach((ch, idx) => {
+        const opt = document.createElement('option');
+        opt.value = ch.file;
+        opt.textContent = `${idx + 1}. ${ch.title} (${ch.cached_segments}/${ch.total_segments} cached)`;
+        this.chapterSelect.appendChild(opt);
+      });
+
+      this.state.activeChapter = this.state.chaptersList[0].file;
+      await this.loadChapterScript(this.state.activeChapter);
+      this.updatePackagingMetadata();
+    } catch (e) {
+      console.error('Failed to load project chapters:', e);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // New Project Modal Wizard
+  // ─────────────────────────────────────────────────────────────
+  openNewProjectModal() {
+    this.modalNewProject.classList.remove('hidden');
+    this.modalProjName.value = '';
+    this.modalFileInput.value = '';
+    this.selectedFileName.textContent = 'No file selected';
+    this.modalLocalPath.value = '';
+    this.modalParsingFeedback.classList.add('hidden');
+    this.btnCreateProjectSubmit.disabled = false;
+    this.btnCreateProjectSubmit.innerHTML = '<span>✨</span> Create & Ingest Project';
+  }
+
+  closeNewProjectModal() {
+    this.modalNewProject.classList.add('hidden');
+  }
+
+  async submitCreateProject() {
+    const name = this.modalProjName.value.trim();
+    if (!name) {
+      alert('Please enter a Project Title.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('project_type', this.state.selectedNewProjectType);
+    formData.append('author', this.modalProjAuthor.value.trim());
+
+    if (this.modalFileInput.files && this.modalFileInput.files[0]) {
+      formData.append('file', this.modalFileInput.files[0]);
+    }
+    if (this.modalLocalPath.value.trim()) {
+      formData.append('local_path', this.modalLocalPath.value.trim());
+    }
+
+    this.modalParsingFeedback.classList.remove('hidden');
+    this.btnCreateProjectSubmit.disabled = true;
+    this.btnCreateProjectSubmit.innerHTML = '<span>⚙</span> Ingesting...';
+
+    try {
+      const resp = await fetch('/api/projects/create', {
+        method: 'POST',
+        body: formData
+      });
+
+      const res = await resp.json();
+      if (res.success) {
+        this.closeNewProjectModal();
+        await this.loadProjectsList(res.project_id);
+        this.switchTab('scriptStudio');
+      } else {
+        alert('Failed to create project.');
+      }
+    } catch (e) {
+      alert('Error creating project.');
+    } finally {
+      this.modalParsingFeedback.classList.add('hidden');
+      this.btnCreateProjectSubmit.disabled = false;
+      this.btnCreateProjectSubmit.innerHTML = '<span>✨</span> Create & Ingest Project';
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -222,36 +396,8 @@ class NovelCastStudio {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Project & Chapter Loading
+  // Chapter Script Loading & Table Rendering
   // ─────────────────────────────────────────────────────────────
-  async loadProject() {
-    this.chapterSelect.innerHTML = '<option>Loading chapters...</option>';
-    try {
-      const resp = await fetch(`/api/scripts/${this.state.activeProject}`);
-      this.state.chaptersList = await resp.json();
-
-      this.chapterSelect.innerHTML = '';
-      if (!this.state.chaptersList.length) {
-        this.chapterSelect.innerHTML = '<option>No chapters found</option>';
-        this.scriptRowsContainer.innerHTML = '<div class="loading-state"><p>No chapters in this project.</p></div>';
-        return;
-      }
-
-      this.state.chaptersList.forEach((ch, idx) => {
-        const opt = document.createElement('option');
-        opt.value = ch.file;
-        opt.textContent = `${idx + 1}. ${ch.title} (${ch.cached_segments}/${ch.total_segments} cached)`;
-        this.chapterSelect.appendChild(opt);
-      });
-
-      this.state.activeChapter = this.state.chaptersList[0].file;
-      await this.loadChapterScript(this.state.activeChapter);
-      this.updatePackagingMetadata();
-    } catch (e) {
-      console.error('Failed to load project chapters:', e);
-    }
-  }
-
   async loadChapterScript(chapterId) {
     this.scriptRowsContainer.innerHTML = `
       <div class="loading-state">
@@ -292,7 +438,6 @@ class NovelCastStudio {
       row.id = `segRow_${idx}`;
 
       const spkLower = (seg.speaker || 'narrador').toLowerCase();
-      const speakerClass = `speaker-${spkLower}`;
 
       row.innerHTML = `
         <div class="col-num">${seg.id}</div>
@@ -407,7 +552,6 @@ class NovelCastStudio {
       this.state.isPlaying = true;
       this.btnPlayPause.textContent = '⏸';
     } else {
-      // Synthesize on the fly
       await this.rerollSingleSegment(idx, true);
     }
   }
@@ -624,16 +768,13 @@ class NovelCastStudio {
   // Packaging & M4B Compilation
   // ─────────────────────────────────────────────────────────────
   updatePackagingMetadata() {
-    if (this.state.activeProject === 'vol2') {
-      this.txtBookTitle.value = 'Re:Zero Volumen 2 (Novela Ligera)';
+    const curProj = this.state.projectsList.find(p => p.id === this.state.activeProject);
+    if (curProj) {
+      this.txtBookTitle.value = `${curProj.name} (Audiobook)`;
       this.txtAuthor.value = 'Tappei Nagatsuki';
-      this.txtCoverPath.value = 'output/volume_2/cover_vol2.jpg';
-      this.coverPreviewImg.src = '/api/audio/download?path=' + encodeURIComponent('output/volume_2/cover_vol2.jpg');
-    } else if (this.state.activeProject === 'vol3') {
-      this.txtBookTitle.value = 'Re:Zero Volumen 3 (Novela Ligera)';
-      this.txtAuthor.value = 'Tappei Nagatsuki';
-      this.txtCoverPath.value = 'output/volume_3/cover_vol3.jpg';
-      this.coverPreviewImg.src = '/api/audio/download?path=' + encodeURIComponent('output/volume_3/cover_vol3.jpg');
+      const coverPath = `${curProj.output_dir}/cover.jpg`;
+      this.txtCoverPath.value = coverPath;
+      this.coverPreviewImg.src = `/api/audio/download?path=${encodeURIComponent(coverPath)}`;
     }
   }
 
@@ -703,6 +844,62 @@ class NovelCastStudio {
     } catch (e) {
       this.btnStitchAllChapters.textContent = '🎧 Stitch All Chapters';
       alert('Stitching failed.');
+    }
+  }
+
+  async synthesizeActiveChapter() {
+    this.btnSynthesizeChapter.textContent = '⚙ Synthesizing...';
+    try {
+      const payload = {
+        project_id: this.state.activeProject,
+        chapter_id: this.state.activeChapter,
+        engine: 'omnivoice',
+        mode: this.state.engineMode,
+        remote_url: this.state.remoteUrl,
+        workers: 4
+      };
+      const resp = await fetch('/api/tasks/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      this.btnSynthesizeChapter.innerHTML = '<span>⚡</span> Synthesize Chapter';
+      if (data.success) {
+        await this.loadChapterScript(this.state.activeChapter);
+        alert(`Chapter synthesized! (${data.newly_generated} lines generated, ${data.already_cached} cached)`);
+      }
+    } catch (e) {
+      this.btnSynthesizeChapter.innerHTML = '<span>⚡</span> Synthesize Chapter';
+      alert('Synthesis failed.');
+    }
+  }
+
+  async synthesizeAllChapters() {
+    this.btnSynthesizeAllChapters.textContent = '⚙ Synthesizing All...';
+    try {
+      const payload = {
+        project_id: this.state.activeProject,
+        engine: 'omnivoice',
+        mode: this.state.engineMode,
+        remote_url: this.state.remoteUrl,
+        workers: 4
+      };
+      const resp = await fetch('/api/tasks/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      this.btnSynthesizeAllChapters.innerHTML = '<span>⚡</span> Synthesize All Missing Lines';
+      if (data.success) {
+        await this.loadProject();
+        this.renderChapterChecklist();
+        alert(`All chapters synthesized! (${data.newly_generated} lines generated, ${data.already_cached} cached)`);
+      }
+    } catch (e) {
+      this.btnSynthesizeAllChapters.innerHTML = '<span>⚡</span> Synthesize All Missing Lines';
+      alert('Batch synthesis failed.');
     }
   }
 

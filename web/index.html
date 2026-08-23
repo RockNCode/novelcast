@@ -31,6 +31,9 @@
           <option value="vol3">Re:Zero Vol 3</option>
           <option value="dub">Mushoku Tensei Dub</option>
         </select>
+        <button id="btnOpenNewProjectModal" class="btn btn-secondary btn-sm" title="Create a New Audiobook Project or Ingest EPUB">
+          <span>➕</span> New Project
+        </button>
       </div>
 
       <!-- OmniVoice Dual-Mode Switcher -->
@@ -96,8 +99,11 @@
             <button id="btnSaveScript" class="btn btn-secondary">
               <span>💾</span> Save Edits
             </button>
-            <button id="btnStitchActiveChapter" class="btn btn-accent">
-              <span>🎧</span> Stitch Chapter MP3
+            <button id="btnSynthesizeChapter" class="btn btn-accent">
+              <span>⚡</span> Synthesize Chapter
+            </button>
+            <button id="btnStitchActiveChapter" class="btn btn-secondary">
+              <span>🎧</span> Stitch MP3
             </button>
           </div>
         </div>
@@ -191,6 +197,9 @@
             </div>
 
             <div class="package-actions">
+              <button id="btnSynthesizeAllChapters" class="btn btn-accent btn-block">
+                <span>⚡</span> Synthesize All Missing Lines
+              </button>
               <button id="btnStitchAllChapters" class="btn btn-secondary btn-block">
                 <span>🎧</span> Stitch All Chapters
               </button>
@@ -318,6 +327,94 @@
       </div>
       <audio id="globalAudioPlayer" preload="auto"></audio>
     </footer>
+
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- NEW PROJECT CREATION WIZARD MODAL                    -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <div id="modalNewProject" class="modal-overlay hidden">
+      <div class="modal-card glass-panel">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>Create New Audiobook Project</h3>
+            <p class="panel-desc">Ingest an EPUB eBook or initialize a multi-voice production workspace.</p>
+          </div>
+          <button id="btnCloseModal" class="btn-icon close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Step 1: Project Type Tabs -->
+          <div class="project-type-selector">
+            <button class="type-card active" data-type="epub">
+              <span class="type-icon">📖</span>
+              <div class="type-info">
+                <strong>Light Novel / eBook</strong>
+                <p>Parse EPUB with smart character dialogue attribution</p>
+              </div>
+            </button>
+            <button class="type-card" data-type="dub">
+              <span class="type-icon">🌐</span>
+              <div class="type-info">
+                <strong>Audiobook Dubbing</strong>
+                <p>Cross-lingual translation and voice cloning</p>
+              </div>
+            </button>
+            <button class="type-card" data-type="blank">
+              <span class="type-icon">📁</span>
+              <div class="type-info">
+                <strong>Blank Project</strong>
+                <p>Custom script directory and voice bank</p>
+              </div>
+            </button>
+          </div>
+
+          <!-- Step 2: Form Inputs -->
+          <div class="modal-form-grid">
+            <div class="form-group">
+              <label for="modalProjName">Project Title *</label>
+              <input type="text" id="modalProjName" class="studio-input" placeholder="e.g. Re:Zero Volume 4">
+            </div>
+
+            <div class="form-group">
+              <label for="modalProjAuthor">Author</label>
+              <input type="text" id="modalProjAuthor" class="studio-input" placeholder="e.g. Tappei Nagatsuki" value="Tappei Nagatsuki">
+            </div>
+
+            <div id="epubUploadGroup" class="form-group">
+              <label>Select or Drop EPUB File</label>
+              <div class="file-dropzone" id="epubDropzone">
+                <input type="file" id="modalFileInput" accept=".epub,.m4b,.mp3" class="hidden-file-input">
+                <div class="dropzone-content">
+                  <span class="drop-icon">📤</span>
+                  <p id="dropzoneText">Drag & drop <strong>.epub</strong> file here, or <span class="text-accent">browse</span></p>
+                  <span class="file-info-label" id="selectedFileName">No file selected</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="modalLocalPath">Or specify local file path on server</label>
+              <input type="text" id="modalLocalPath" class="studio-input" placeholder="e.g. /path/to/novel.epub">
+            </div>
+          </div>
+
+          <!-- Live Parsing Feedback -->
+          <div id="modalParsingFeedback" class="parsing-feedback-box hidden">
+            <div class="spinner"></div>
+            <div class="feedback-text">
+              <strong id="parsingStatusTitle">Parsing EPUB chapters...</strong>
+              <p id="parsingStatusDesc">Extracting dialogue, tags, and cover art...</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnCancelModal" class="btn btn-secondary">Cancel</button>
+          <button id="btnCreateProjectSubmit" class="btn btn-accent">
+            <span>✨</span> Create & Ingest Project
+          </button>
+        </div>
+      </div>
+    </div>
 
   </div>
 
