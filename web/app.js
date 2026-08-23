@@ -30,6 +30,7 @@ class NovelCastStudio {
     // Top Nav & Mode Switcher
     this.projectSelect = document.getElementById('projectSelect');
     this.btnOpenNewProjectModal = document.getElementById('btnOpenNewProjectModal');
+    this.btnRun1ClickPipeline = document.getElementById('btnRun1ClickPipeline');
     this.btnModeRemote = document.getElementById('btnModeRemote');
     this.btnModeLocal = document.getElementById('btnModeLocal');
     this.engineStatusBadge = document.getElementById('engineStatusBadge');
@@ -101,6 +102,26 @@ class NovelCastStudio {
     this.typeCards = document.querySelectorAll('.type-card');
     this.epubDropzone = document.getElementById('epubDropzone');
     this.epubUploadGroup = document.getElementById('epubUploadGroup');
+    this.chkAutoRunPipeline = document.getElementById('chkAutoRunPipeline');
+
+    // Real-Time Pipeline Progress Modal Elements
+    this.modalPipelineProgress = document.getElementById('modalPipelineProgress');
+    this.btnCloseProgressModal = document.getElementById('btnCloseProgressModal');
+    this.btnDismissProgressModal = document.getElementById('btnDismissProgressModal');
+    this.pipelineProgressBar = document.getElementById('pipelineProgressBar');
+    this.pipelineProgressPct = document.getElementById('pipelineProgressPct');
+    this.pipelineStepName = document.getElementById('pipelineStepName');
+    this.pipelineProgressSubtitle = document.getElementById('pipelineProgressSubtitle');
+    this.pipelineLogsContainer = document.getElementById('pipelineLogsContainer');
+    this.logItemCount = document.getElementById('logItemCount');
+    this.pipelineSuccessBanner = document.getElementById('pipelineSuccessBanner');
+    this.btnPipelineDownloadM4B = document.getElementById('btnPipelineDownloadM4B');
+    this.successTitle = document.getElementById('successTitle');
+    this.successMeta = document.getElementById('successMeta');
+    this.pipelineModalTitle = document.getElementById('pipelineModalTitle');
+    this.pipelineModalSubtitle = document.getElementById('pipelineModalSubtitle');
+
+    this.activeJobPollTimer = null;
   }
 
   bindEvents() {
@@ -118,10 +139,22 @@ class NovelCastStudio {
       this.loadProject();
     });
 
+    // 1-Click Production from Header
+    this.btnRun1ClickPipeline.addEventListener('click', () => {
+      const curProj = this.state.projectsList.find(p => p.id === this.state.activeProject);
+      const title = curProj ? curProj.name : this.txtBookTitle.value;
+      const author = this.txtAuthor.value;
+      this.launchFullPipeline(this.state.activeProject, title, author);
+    });
+
     // New Project Modal Triggers
     this.btnOpenNewProjectModal.addEventListener('click', () => this.openNewProjectModal());
     this.btnCloseModal.addEventListener('click', () => this.closeNewProjectModal());
     this.btnCancelModal.addEventListener('click', () => this.closeNewProjectModal());
+
+    // Progress Modal Close Triggers
+    this.btnCloseProgressModal.addEventListener('click', () => this.closeProgressModal());
+    this.btnDismissProgressModal.addEventListener('click', () => this.closeProgressModal());
 
     // Modal Project Type Switcher
     this.typeCards.forEach(card => {
@@ -327,7 +360,13 @@ class NovelCastStudio {
       if (res.success) {
         this.closeNewProjectModal();
         await this.loadProjectsList(res.project_id);
-        this.switchTab('scriptStudio');
+
+        if (this.chkAutoRunPipeline.checked && this.state.selectedNewProjectType === 'epub') {
+          // Launch 1-Click End-to-End Production
+          this.launchFullPipeline(res.project_id, name, this.modalProjAuthor.value.trim());
+        } else {
+          this.switchTab('scriptStudio');
+        }
       } else {
         alert('Failed to create project.');
       }
@@ -338,6 +377,156 @@ class NovelCastStudio {
       this.btnCreateProjectSubmit.disabled = false;
       this.btnCreateProjectSubmit.innerHTML = '<span>✨</span> Create & Ingest Project';
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 1-Click End-to-End Pipeline & Real-Time Job Tracker
+  // ─────────────────────────────────────────────────────────────
+  async launchFullPipeline(projectId, bookTitle, authorName) {
+    if (this.activeJobPollTimer) clearInterval(this.activeJobPollTimer);
+
+    // Reset Progress Modal UI
+    this.modalPipelineProgress.classList.remove('hidden');
+    this.pipelineSuccessBanner.classList.add('hidden');
+    this.pipelineProgressBar.style.width = '0%';
+    this.pipelineProgressPct.textContent = '0%';
+    this.pipelineStepName.textContent = 'Initializing Pipeline...';
+    this.pipelineProgressSubtitle.textContent = 'Queuing audiobook production tasks...';
+    this.pipelineLogsContainer.innerHTML = '<div class="log-line info">[System] Starting 1-Click Pipeline for ' + (bookTitle || projectId) + '...</div>';
+    this.logItemCount.textContent = '1 message';
+
+    this.pipelineModalTitle.textContent = `🚀 Producing: ${bookTitle || projectId}`;
+
+    this.resetStepCards();
+
+    try {
+      const payload = {
+        project_id: projectId,
+        title: bookTitle,
+        author: authorName,
+        engine: 'omnivoice',
+        mode: this.state.engineMode,
+        remote_url: this.state.remoteUrl,
+        workers: 4,
+        speaker_change_ms: parseInt(this.sliderSpeakerChange.value),
+        same_speaker_ms: parseInt(this.sliderSameSpeaker.value),
+        bitrate: this.txtBitrate.value
+      };
+
+      const resp = await fetch('/api/pipeline/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await resp.json();
+      if (data.job_id) {
+        this.pollJobStatus(data.job_id);
+      }
+    } catch (e) {
+      this.pipelineStepName.textContent = '❌ Failed to start pipeline.';
+      this.pipelineProgressSubtitle.textContent = String(e);
+    }
+  }
+
+  pollJobStatus(jobId) {
+    this.activeJobPollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/jobs/${jobId}`);
+        if (!resp.ok) return;
+        const job = await resp.json();
+        this.updatePipelineProgressUI(job);
+
+        if (job.status === 'completed' || job.status === 'failed') {
+          clearInterval(this.activeJobPollTimer);
+          this.activeJobPollTimer = null;
+          // Refresh studio state
+          await this.loadProject();
+        }
+      } catch (e) {
+        console.error('Job poll error:', e);
+      }
+    }, 800);
+  }
+
+  updatePipelineProgressUI(job) {
+    const pct = Math.min(Math.max(job.progress_pct || 0, 0), 100);
+    this.pipelineProgressBar.style.width = `${pct}%`;
+    this.pipelineProgressPct.textContent = `${Math.round(pct)}%`;
+    this.pipelineStepName.textContent = `Step ${job.step}/4: ${job.step_name}`;
+
+    if (job.current_item && job.total_items) {
+      this.pipelineProgressSubtitle.textContent = `Processing chunk ${job.current_item} of ${job.total_items} (${job.step_name})`;
+    } else {
+      this.pipelineProgressSubtitle.textContent = job.logs[job.logs.length - 1] || 'Processing...';
+    }
+
+    // Update Steps
+    for (let s = 1; s <= 4; s++) {
+      const card = document.getElementById(`stepCard${s}`);
+      const tag = document.getElementById(`step${s}Status`);
+      if (!card || !tag) continue;
+
+      if (s < job.step) {
+        card.className = 'step-card completed';
+        tag.className = 'step-status-tag completed';
+        tag.textContent = '✓ Done';
+      } else if (s === job.step) {
+        card.className = 'step-card active';
+        tag.className = 'step-status-tag active';
+        tag.textContent = job.status === 'completed' ? '✓ Done' : 'Active';
+      } else {
+        card.className = 'step-card';
+        tag.className = 'step-status-tag';
+        tag.textContent = 'Pending';
+      }
+    }
+
+    if (job.status === 'completed') {
+      const card4 = document.getElementById('stepCard4');
+      const tag4 = document.getElementById('step4Status');
+      if (card4 && tag4) {
+        card4.className = 'step-card completed';
+        tag4.className = 'step-status-tag completed';
+        tag4.textContent = '✓ Done';
+      }
+    }
+
+    // Update Logs
+    if (job.logs && job.logs.length) {
+      this.logItemCount.textContent = `${job.logs.length} messages`;
+      this.pipelineLogsContainer.innerHTML = job.logs.map(l => {
+        const isErr = l.includes('❌') || l.includes('Error');
+        const isSuccess = l.includes('✓') || l.includes('🎉');
+        const cls = isErr ? 'error' : isSuccess ? 'success' : 'info';
+        return `<div class="log-line ${cls}">${this.escapeHtml(l)}</div>`;
+      }).join('');
+      this.pipelineLogsContainer.scrollTop = this.pipelineLogsContainer.scrollHeight;
+    }
+
+    // On Completed
+    if (job.status === 'completed' && job.result) {
+      this.pipelineSuccessBanner.classList.remove('hidden');
+      this.successTitle.textContent = `${job.result.title} Ready!`;
+      this.successMeta.textContent = `Master M4B: ${job.result.size_mb} MB • AAC High Quality`;
+      this.btnPipelineDownloadM4B.href = job.result.download_url;
+    }
+  }
+
+  resetStepCards() {
+    for (let s = 1; s <= 4; s++) {
+      const card = document.getElementById(`stepCard${s}`);
+      const tag = document.getElementById(`step${s}Status`);
+      if (card && tag) {
+        card.className = s === 1 ? 'step-card active' : 'step-card';
+        tag.className = s === 1 ? 'step-status-tag active' : 'step-status-tag';
+        tag.textContent = s === 1 ? 'Active' : 'Pending';
+      }
+    }
+  }
+
+  closeProgressModal() {
+    this.modalPipelineProgress.classList.add('hidden');
   }
 
   // ─────────────────────────────────────────────────────────────

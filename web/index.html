@@ -34,6 +34,9 @@
         <button id="btnOpenNewProjectModal" class="btn btn-secondary btn-sm" title="Create a New Audiobook Project or Ingest EPUB">
           <span>➕</span> New Project
         </button>
+        <button id="btnRun1ClickPipeline" class="btn btn-accent btn-sm" title="Run 1-Click Production from Script to Master M4B">
+          <span>🚀</span> 1-Click Production
+        </button>
       </div>
 
       <!-- OmniVoice Dual-Mode Switcher -->
@@ -395,6 +398,18 @@
               <label for="modalLocalPath">Or specify local file path on server</label>
               <input type="text" id="modalLocalPath" class="studio-input" placeholder="e.g. /path/to/novel.epub">
             </div>
+
+            <!-- Auto 1-Click Pipeline Option -->
+            <div class="form-group checkbox-pipeline-opt">
+              <label class="pipeline-toggle-label">
+                <input type="checkbox" id="chkAutoRunPipeline" checked>
+                <span class="custom-chk"></span>
+                <span class="chk-text">
+                  <strong>🚀 Run 1-Click Production to Master M4B</strong>
+                  <small>Auto-synthesize all speech chunks with OmniVoice, stitch chapters, and package the M4B</small>
+                </span>
+              </label>
+            </div>
           </div>
 
           <!-- Live Parsing Feedback -->
@@ -412,6 +427,96 @@
           <button id="btnCreateProjectSubmit" class="btn btn-accent">
             <span>✨</span> Create & Ingest Project
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- REAL-TIME 1-CLICK PIPELINE PROGRESS MODAL             -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <div id="modalPipelineProgress" class="modal-overlay hidden">
+      <div class="modal-card pipeline-progress-card glass-panel">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3 id="pipelineModalTitle">🚀 End-to-End Audiobook Production</h3>
+            <p id="pipelineModalSubtitle" class="panel-desc">Running full multi-voice production pipeline...</p>
+          </div>
+          <button id="btnCloseProgressModal" class="btn-icon close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          
+          <!-- Step Pipeline Tracker -->
+          <div class="pipeline-steps-grid">
+            <div class="step-card" id="stepCard1">
+              <div class="step-num">1</div>
+              <div class="step-meta">
+                <strong>Parse eBook</strong>
+                <span class="step-status-tag" id="step1Status">Pending</span>
+              </div>
+            </div>
+            <div class="step-card active" id="stepCard2">
+              <div class="step-num">2</div>
+              <div class="step-meta">
+                <strong>Synthesize Audio</strong>
+                <span class="step-status-tag active" id="step2Status">Active</span>
+              </div>
+            </div>
+            <div class="step-card" id="stepCard3">
+              <div class="step-num">3</div>
+              <div class="step-meta">
+                <strong>Stitch Chapters</strong>
+                <span class="step-status-tag" id="step3Status">Pending</span>
+              </div>
+            </div>
+            <div class="step-card" id="stepCard4">
+              <div class="step-num">4</div>
+              <div class="step-meta">
+                <strong>Package M4B</strong>
+                <span class="step-status-tag" id="step4Status">Pending</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Glowing Progress Bar -->
+          <div class="main-progress-section">
+            <div class="progress-info-row">
+              <span id="pipelineStepName" class="progress-step-label">Step 2/4: Synthesizing Speech Chunks</span>
+              <span id="pipelineProgressPct" class="progress-pct-label">0%</span>
+            </div>
+            <div class="progress-bar-track-large">
+              <div id="pipelineProgressBar" class="progress-bar-fill-large" style="width: 0%;"></div>
+            </div>
+            <p id="pipelineProgressSubtitle" class="progress-sub-label">Starting batch synthesis worker pool...</p>
+          </div>
+
+          <!-- Live Terminal Output -->
+          <div class="pipeline-logs-wrapper">
+            <div class="logs-header">
+              <span>Live Production Logs</span>
+              <span id="logItemCount" class="log-count">0 messages</span>
+            </div>
+            <div id="pipelineLogsContainer" class="pipeline-terminal-window">
+              <div class="log-line info">[System] Initializing production job...</div>
+            </div>
+          </div>
+
+          <!-- Completion Banner -->
+          <div id="pipelineSuccessBanner" class="pipeline-success-card hidden">
+            <div class="success-icon">🎉</div>
+            <div class="success-content">
+              <h4 id="successTitle">Master Audiobook Packaged Successfully!</h4>
+              <p id="successMeta">Audiobook is ready with embedded cover art and chapter TOC.</p>
+              <a id="btnPipelineDownloadM4B" href="#" class="btn btn-accent download-btn">
+                <span>⬇️</span> Download Master M4B Audiobook
+              </a>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnDismissProgressModal" class="btn btn-secondary">Hide to Background</button>
         </div>
       </div>
     </div>

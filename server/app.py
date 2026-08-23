@@ -519,6 +519,182 @@ class GenerateTaskRequest(BaseModel):
     remote_url: Optional[str] = "http://192.168.0.180:9880/synthesize"
     workers: int = 4
 
+class RunPipelineRequest(BaseModel):
+    project_id: str
+    title: Optional[str] = None
+    author: Optional[str] = None
+    engine: str = "omnivoice"
+    mode: str = "remote"
+    remote_url: Optional[str] = "http://192.168.0.180:9880/synthesize"
+    workers: int = 4
+    speaker_change_ms: int = 600
+    same_speaker_ms: int = 400
+    bitrate: str = "128k"
+
+# In-memory jobs tracking
+jobs_db: Dict[str, Dict[str, Any]] = {}
+
+def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
+    try:
+        pinfo = resolve_project_dir(req.project_id)
+        scripts_dir = pinfo["path"]
+        cache_dir = pinfo["cache"]
+        output_dir = pinfo["output"]
+        chapters_dir = os.path.join(output_dir, "chapters")
+        os.makedirs(chapters_dir, exist_ok=True)
+
+        job = jobs_db[job_id]
+        job["status"] = "running"
+        job["step"] = 1
+        job["step_name"] = "Inspecting Project Scripts"
+        job["progress_pct"] = 5.0
+        job["logs"].append(f"Starting End-to-End Pipeline for project: {req.project_id}")
+
+        script_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
+        if not script_files:
+            raise ValueError(f"No chapter scripts found in {scripts_dir}")
+
+        job["logs"].append(f"Found {len(script_files)} chapter script(s) to process.")
+
+        # Step 2: Batch TTS Synthesis
+        job["step"] = 2
+        job["step_name"] = "Synthesizing Speech Audio Chunks"
+        job["logs"].append("Step 2/4: Batch synthesizing speech audio with OmniVoice...")
+
+        vb = VoiceBank(voice_bank_dir="voice_bank")
+        vb.auto_discover_voices()
+        remote_url = req.remote_url if req.mode == "remote" else None
+        engine = get_engine(req.engine, remote_url=remote_url, cache_dir=cache_dir, workers=req.workers)
+
+        # Count total segments across all scripts
+        all_scripts = []
+        total_segments_count = 0
+        for sf in script_files:
+            with open(os.path.join(scripts_dir, sf), "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+                cs = ChapterScript(**data)
+                all_scripts.append(cs)
+                total_segments_count += len(cs.segments)
+
+        job["total_items"] = total_segments_count
+        job["current_item"] = 0
+
+        processed_so_far = 0
+        for cs in all_scripts:
+            def on_progress(cur, tot, seg, is_cached, success):
+                nonlocal processed_so_far
+                processed_so_far += 1
+                job["current_item"] = processed_so_far
+                step_pct = (processed_so_far / max(total_segments_count, 1)) * 65.0
+                job["progress_pct"] = round(10.0 + step_pct, 1)
+                
+                status_str = "cached" if is_cached else "synthesized"
+                if processed_so_far % 10 == 0 or processed_so_far == total_segments_count:
+                    job["logs"].append(f"[{job['progress_pct']}%] Segment {processed_so_far}/{total_segments_count} ({seg.speaker}: {seg.text[:30]}...) [{status_str}]")
+
+            engine.batch_synthesize(cs, vb, language="es", progress_callback=on_progress)
+
+        job["logs"].append(f"✓ All {total_segments_count} speech chunks ready in cache!")
+
+        # Step 3: Stitch Chapters
+        job["step"] = 3
+        job["step_name"] = "Stitching Continuous Chapter Tracks"
+        job["progress_pct"] = 78.0
+        job["logs"].append("Step 3/4: Stitching chapters into audio tracks...")
+
+        from novelcast.core.schema import PauseSettings
+        pauses = PauseSettings(speaker_change_ms=req.speaker_change_ms, same_speaker_ms=req.same_speaker_ms)
+        stitcher = AudioStitcher(pause_settings=pauses)
+
+        stitched_files = []
+        for idx, cs in enumerate(all_scripts):
+            audio_files = [engine.get_cache_path(s) for s in cs.segments]
+            out_mp3 = os.path.join(chapters_dir, f"{cs.chapter_id}.mp3")
+            stitcher.stitch_chapter(cs, audio_files, out_mp3)
+            stitched_files.append(out_mp3)
+            
+            stitch_pct = ((idx + 1) / len(all_scripts)) * 12.0
+            job["progress_pct"] = round(78.0 + stitch_pct, 1)
+            job["logs"].append(f"✓ Stitched Chapter {idx + 1}/{len(all_scripts)}: {cs.title}")
+
+        # Step 4: Package Master M4B
+        job["step"] = 4
+        job["step_name"] = "Packaging Master M4B Audiobook"
+        job["progress_pct"] = 92.0
+        job["logs"].append("Step 4/4: Compiling master M4B with chapters and cover art...")
+
+        book_title = req.title or pinfo.get("name", "NovelCast Audiobook")
+        author_name = req.author or "Author"
+        
+        cover_art = None
+        for cname in ["cover.jpg", "cover_vol2.jpg", "cover_vol3.jpg", "cover.png"]:
+            cand = os.path.join(output_dir, cname)
+            if os.path.exists(cand):
+                cover_art = cand
+                break
+
+        out_m4b = os.path.join(output_dir, f"{book_title.replace(' ', '_')}.m4b")
+        chapter_entries = []
+        for sf in stitched_files:
+            bname = os.path.splitext(os.path.basename(sf))[0]
+            chapter_entries.append({
+                "title": bname.replace("_", " ").title(),
+                "audio_path": sf
+            })
+
+        packager = AudiobookPackager(bitrate=req.bitrate)
+        packager.package_m4b(
+            chapter_files=chapter_entries,
+            output_m4b_path=out_m4b,
+            book_title=book_title,
+            author=author_name,
+            cover_image_path=cover_art
+        )
+
+        size_mb = round(os.path.getsize(out_m4b) / (1024 * 1024), 2) if os.path.exists(out_m4b) else 0
+        job["status"] = "completed"
+        job["progress_pct"] = 100.0
+        job["logs"].append(f"🎉 Production Complete! Master M4B: {out_m4b} ({size_mb} MB)")
+        job["result"] = {
+            "m4b_path": out_m4b,
+            "size_mb": size_mb,
+            "title": book_title,
+            "download_url": f"/api/audio/download?path={out_m4b}"
+        }
+
+    except Exception as e:
+        jobs_db[job_id]["status"] = "failed"
+        jobs_db[job_id]["error"] = str(e)
+        jobs_db[job_id]["logs"].append(f"❌ Error: {str(e)}")
+
+@app.post("/api/pipeline/run")
+def start_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTasks):
+    """Launches the complete 1-Click Audiobook Pipeline in the background with real-time job tracking."""
+    job_id = f"job_{int(time.time())}_{req.project_id}"
+    jobs_db[job_id] = {
+        "job_id": job_id,
+        "project_id": req.project_id,
+        "status": "pending",
+        "step": 1,
+        "total_steps": 4,
+        "step_name": "Initializing",
+        "progress_pct": 0.0,
+        "current_item": 0,
+        "total_items": 0,
+        "logs": ["Job queued..."],
+        "result": None,
+        "error": None
+    }
+    background_tasks.add_task(_run_pipeline_worker, job_id, req)
+    return {"job_id": job_id, "status": "started"}
+
+@app.get("/api/jobs/{job_id}")
+def get_job_status(job_id: str):
+    """Returns real-time progress status, percentages, and logs for a running job."""
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return jobs_db[job_id]
+
 @app.post("/api/tasks/generate")
 def batch_generate_audio(req: GenerateTaskRequest):
     """Batch synthesizes speech audio chunks for a chapter or entire project with multi-worker acceleration."""
