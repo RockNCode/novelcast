@@ -106,8 +106,38 @@ class CharacterDetector:
                 "gender": "male" if spk in ["Narrador", "Subaru", "Roswaal", "Reinhard"] else "female" if spk in ["Emilia", "Rem", "Ram", "Beatrice", "Felt", "Petra"] else "unspecified",
                 "assigned_voice": assigned_file,
                 "suggested_voice": suggested_file,
-                "has_reference_audio": bool(assigned_file or suggested_file)
+                "has_reference_audio": bool(assigned_file or suggested_file),
+                "is_custom": False
             })
+
+        # Also include any custom/configured characters in voice_config.json that were not present in the current scripts
+        detected_names_lower = {c["name"].lower() for c in detected_list}
+        for char_name, char_info in self.vb.config.characters.items():
+            if char_name.lower() not in detected_names_lower:
+                assigned_file = None
+                if char_info.reference_audio:
+                    ref = char_info.reference_audio
+                    if os.path.isabs(ref):
+                        if ref.startswith(os.path.abspath(self.vb.voice_bank_dir)):
+                            assigned_file = os.path.relpath(ref, self.vb.voice_bank_dir)
+                        else:
+                            assigned_file = os.path.basename(ref)
+                    elif ref.startswith("voice_bank/"):
+                        assigned_file = ref[len("voice_bank/"):]
+                    else:
+                        assigned_file = ref
+
+                detected_list.append({
+                    "name": char_name,
+                    "dialogue_count": 0,
+                    "pct_of_dialogue": None,
+                    "sample_quote": char_info.description or f"Custom configured character: {char_name}",
+                    "gender": char_info.gender or "unspecified",
+                    "assigned_voice": assigned_file,
+                    "suggested_voice": assigned_file,
+                    "has_reference_audio": bool(assigned_file),
+                    "is_custom": True
+                })
 
         return detected_list
 

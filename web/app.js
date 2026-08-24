@@ -992,11 +992,29 @@ class NovelCastStudio {
   }
 
   getSpeakerOptions(currentSpeaker) {
-    const defaultSpeakers = ['Narrador', 'Subaru', 'Emilia', 'Roswaal', 'Beatrice', 'Rem', 'Ram', 'Puck', 'Elsa', 'Felt', 'Reinhard'];
+    const speakerSet = new Set(['Narrador']);
+    
+    // Add all detected & custom characters in project
+    (this.state.detectedCharacters || []).forEach(c => speakerSet.add(c.name));
+    
+    // Add all characters in voice library
+    Object.keys(this.state.libraryCharacters || {}).forEach(k => speakerSet.add(k));
+
+    // Ensure current speaker is in set
+    if (currentSpeaker) {
+      speakerSet.add(currentSpeaker);
+    }
+
+    const sorted = Array.from(speakerSet).sort((a, b) => {
+      if (a === 'Narrador') return -1;
+      if (b === 'Narrador') return 1;
+      return a.localeCompare(b);
+    });
+
     let opts = '';
-    defaultSpeakers.forEach(s => {
+    sorted.forEach(s => {
       const sel = (s.toLowerCase() === (currentSpeaker || '').toLowerCase()) ? 'selected' : '';
-      opts += `<option value="${s}" ${sel}>${s}</option>`;
+      opts += `<option value="${this.escapeHtml(s)}" ${sel}>${this.escapeHtml(s)}</option>`;
     });
     return opts;
   }
@@ -1661,13 +1679,18 @@ class NovelCastStudio {
         if (narr) matchedValue = narr.name;
       }
 
+      const isCustom = char.is_custom || char.dialogue_count === 0;
+      const countBadge = isCustom
+        ? `<span class="char-dialogue-badge" style="background: rgba(99, 102, 241, 0.25); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.4);">⭐ Pre-Cast / Custom</span>`
+        : `<span class="char-dialogue-badge">${char.dialogue_count} lines${pctText}</span>`;
+
       const card = document.createElement('div');
       card.className = 'cast-card';
       card.innerHTML = `
         <div class="cast-card-top">
           <div class="cast-name-group">
             <span class="cast-name">${this.escapeHtml(char.name)}</span>
-            <span class="char-dialogue-badge">${char.dialogue_count} lines${pctText}</span>
+            ${countBadge}
           </div>
           <span class="speaker-badge speaker-${cLower}">${this.escapeHtml(char.name)}</span>
         </div>
@@ -1688,6 +1711,17 @@ class NovelCastStudio {
             ▶
           </button>
           <span class="sample-name">${matchedValue || 'None assigned'}</span>
+        </div>
+
+        <div class="cast-card-actions" style="display: flex; gap: 0.5rem; margin-top: 0.75rem; border-top: 1px solid var(--border-glass); padding-top: 0.75rem;">
+          <button class="btn btn-secondary btn-sm btn-cast-edit-prof" style="flex: 1; font-size: 0.8rem; padding: 0.35rem 0.5rem;" title="Configure delivery instruct prompt, speed, and scale">
+            <span>✏️</span> Delivery & Tone
+          </button>
+          ${isCustom ? `
+            <button class="btn btn-danger btn-sm btn-cast-delete-char" style="padding: 0.35rem 0.6rem;" title="Remove this pre-cast character">
+              <span>🗑️</span>
+            </button>
+          ` : ''}
         </div>
       `;
 
@@ -1718,6 +1752,27 @@ class NovelCastStudio {
         this.playerLineText.textContent = `Auditioning voice clip: ${select.value}`;
         this.btnPlayPause.textContent = '⏸';
       });
+
+      // Edit delivery profile
+      const btnEditProf = card.querySelector('.btn-cast-edit-prof');
+      btnEditProf.addEventListener('click', () => {
+        this.openVoiceProfileModal(char.name, select.value);
+      });
+
+      // Delete character profile (if custom)
+      const btnDelChar = card.querySelector('.btn-cast-delete-char');
+      if (btnDelChar) {
+        btnDelChar.addEventListener('click', async () => {
+          if (!confirm(`Are you sure you want to remove pre-cast character "${char.name}"?`)) return;
+          try {
+            await fetch(`/api/voice-bank/profiles/${encodeURIComponent(char.name)}`, { method: 'DELETE' });
+            await this.loadVoiceBankLibrary();
+            await this.detectProjectCharacters();
+          } catch (e) {
+            console.error('Failed to remove character:', e);
+          }
+        });
+      }
 
       this.castCardsGrid.appendChild(card);
     });
