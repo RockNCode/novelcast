@@ -369,6 +369,30 @@ body {
   font-size: 0.95rem;
 }
 
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #f87171;
+  color: #fff;
+}
+
+.pipeline-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.pipeline-ctrl-left {
+  display: flex;
+  gap: 0.75rem;
+}
+
 .btn-block {
   width: 100%;
   justify-content: center;

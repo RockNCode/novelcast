@@ -125,8 +125,11 @@ class NovelCastStudio {
     this.successMeta = document.getElementById('successMeta');
     this.pipelineModalTitle = document.getElementById('pipelineModalTitle');
     this.pipelineModalSubtitle = document.getElementById('pipelineModalSubtitle');
+    this.btnPausePipeline = document.getElementById('btnPausePipeline');
+    this.btnStopPipeline = document.getElementById('btnStopPipeline');
 
     this.activeJobPollTimer = null;
+    this.currentJobId = null;
   }
 
   bindEvents() {
@@ -250,6 +253,10 @@ class NovelCastStudio {
 
     // Dubbing Trigger
     this.btnStartDubbing.addEventListener('click', () => this.startDubbingDemo());
+
+    // Pipeline Modal Controls
+    this.btnPausePipeline.addEventListener('click', () => this.togglePauseJob());
+    this.btnStopPipeline.addEventListener('click', () => this.stopJob());
   }
 
   async initApp() {
@@ -438,6 +445,9 @@ class NovelCastStudio {
     this.pipelineModalTitle.textContent = `🚀 Producing: ${bookTitle || projectId}`;
 
     this.resetStepCards();
+    this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
+    this.btnPausePipeline.disabled = false;
+    this.btnStopPipeline.disabled = false;
 
     try {
       const payload = {
@@ -461,6 +471,7 @@ class NovelCastStudio {
 
       const data = await resp.json();
       if (data.job_id) {
+        this.currentJobId = data.job_id;
         this.pollJobStatus(data.job_id);
       }
     } catch (e) {
@@ -469,7 +480,47 @@ class NovelCastStudio {
     }
   }
 
+  async togglePauseJob() {
+    if (!this.currentJobId) return;
+    try {
+      const resp = await fetch(`/api/jobs/${this.currentJobId}/pause`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.success) {
+        this.btnPausePipeline.innerHTML = data.paused ? '<span>▶</span> Resume' : '<span>⏸</span> Pause';
+        if (data.paused) {
+          this.pipelineProgressSubtitle.textContent = '⏸ Pipeline is paused. Click Resume to continue.';
+        }
+      }
+    } catch (e) {
+      console.error('Error toggling pause:', e);
+    }
+  }
+
+  async stopJob() {
+    if (!this.currentJobId) return;
+    if (!confirm('Are you sure you want to stop the production pipeline? Already synthesized chunks will remain safely cached.')) {
+      return;
+    }
+
+    try {
+      this.btnStopPipeline.disabled = true;
+      this.btnPausePipeline.disabled = true;
+      this.pipelineProgressSubtitle.textContent = '🛑 Stopping production pipeline...';
+      const resp = await fetch(`/api/jobs/${this.currentJobId}/cancel`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.success) {
+        this.pipelineProgressSubtitle.textContent = '🛑 Production stopped by user.';
+      }
+    } catch (e) {
+      console.error('Error stopping job:', e);
+    }
+  }
+
   pollJobStatus(jobId) {
+    if (this.activeJobPollTimer) {
+      clearInterval(this.activeJobPollTimer);
+    }
+
     this.activeJobPollTimer = setInterval(async () => {
       try {
         const resp = await fetch(`/api/jobs/${jobId}`);
@@ -477,7 +528,7 @@ class NovelCastStudio {
         const job = await resp.json();
         this.updatePipelineProgressUI(job);
 
-        if (job.status === 'completed' || job.status === 'failed') {
+        if (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') {
           clearInterval(this.activeJobPollTimer);
           this.activeJobPollTimer = null;
           // Refresh studio state
@@ -495,7 +546,14 @@ class NovelCastStudio {
     this.pipelineProgressPct.textContent = `${Math.round(pct)}%`;
     this.pipelineStepName.textContent = `Step ${job.step}/4: ${job.step_name}`;
 
-    if (job.current_item && job.total_items) {
+    if (job.status === 'paused') {
+      this.pipelineProgressSubtitle.textContent = '⏸ Pipeline is paused. Click Resume to continue.';
+      this.btnPausePipeline.innerHTML = '<span>▶</span> Resume';
+    } else if (job.status === 'stopped') {
+      this.pipelineProgressSubtitle.textContent = '🛑 Production stopped.';
+      this.btnPausePipeline.disabled = true;
+      this.btnStopPipeline.disabled = true;
+    } else if (job.current_item && job.total_items) {
       this.pipelineProgressSubtitle.textContent = `Processing chunk ${job.current_item} of ${job.total_items} (${job.step_name})`;
     } else {
       this.pipelineProgressSubtitle.textContent = job.logs[job.logs.length - 1] || 'Processing...';
@@ -514,7 +572,7 @@ class NovelCastStudio {
       } else if (s === job.step) {
         card.className = 'step-card active';
         tag.className = 'step-status-tag active';
-        tag.textContent = job.status === 'completed' ? '✓ Done' : 'Active';
+        tag.textContent = job.status === 'completed' ? '✓ Done' : (job.status === 'paused' ? 'Paused' : (job.status === 'stopped' ? 'Stopped' : 'Active'));
       } else {
         card.className = 'step-card';
         tag.className = 'step-status-tag';
@@ -530,15 +588,23 @@ class NovelCastStudio {
         tag4.className = 'step-status-tag completed';
         tag4.textContent = '✓ Done';
       }
+      this.btnPausePipeline.disabled = true;
+      this.btnStopPipeline.disabled = true;
+    }
+
+    if (job.status === 'failed') {
+      this.btnPausePipeline.disabled = true;
+      this.btnStopPipeline.disabled = true;
     }
 
     // Update Logs
     if (job.logs && job.logs.length) {
       this.logItemCount.textContent = `${job.logs.length} messages`;
       this.pipelineLogsContainer.innerHTML = job.logs.map(l => {
-        const isErr = l.includes('❌') || l.includes('Error');
+        const isErr = l.includes('❌') || l.includes('Error') || l.includes('🛑');
         const isSuccess = l.includes('✓') || l.includes('🎉');
-        const cls = isErr ? 'error' : isSuccess ? 'success' : 'info';
+        const isPause = l.includes('⏸') || l.includes('▶');
+        const cls = isErr ? 'error' : isSuccess ? 'success' : isPause ? 'info' : 'info';
         return `<div class="log-line ${cls}">${this.escapeHtml(l)}</div>`;
       }).join('');
       this.pipelineLogsContainer.scrollTop = this.pipelineLogsContainer.scrollHeight;

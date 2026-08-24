@@ -527,8 +527,18 @@
 
         </div>
 
-        <div class="modal-footer">
-          <button id="btnDismissProgressModal" class="btn btn-secondary">Hide to Background</button>
+        <div class="modal-footer pipeline-modal-footer">
+          <div class="pipeline-ctrl-left">
+            <button id="btnPausePipeline" class="btn btn-secondary">
+              <span>⏸</span> Pause
+            </button>
+            <button id="btnStopPipeline" class="btn btn-danger">
+              <span>🛑</span> Stop Production
+            </button>
+          </div>
+          <div class="pipeline-ctrl-right">
+            <button id="btnDismissProgressModal" class="btn btn-secondary">Hide to Background</button>
+          </div>
         </div>
       </div>
     </div>

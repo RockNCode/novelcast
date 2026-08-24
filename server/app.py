@@ -671,8 +671,27 @@ def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
 
         processed_so_far = 0
         for cs in all_scripts:
+            if job.get("cancel_requested"):
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Pipeline stopped by user.")
+                return
+
             def on_progress(cur, tot, seg, is_cached, success):
                 nonlocal processed_so_far
+                if job.get("cancel_requested"):
+                    job["status"] = "stopped"
+                    return
+
+                while job.get("pause_requested"):
+                    job["status"] = "paused"
+                    time.sleep(0.5)
+                    if job.get("cancel_requested"):
+                        job["status"] = "stopped"
+                        return
+
+                if job["status"] == "paused":
+                    job["status"] = "running"
+
                 processed_so_far += 1
                 job["current_item"] = processed_so_far
                 step_pct = (processed_so_far / max(total_segments_count, 1)) * 65.0
@@ -684,9 +703,18 @@ def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
 
             engine.batch_synthesize(cs, vb, language="es", progress_callback=on_progress)
 
+            if job.get("cancel_requested"):
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Pipeline stopped by user.")
+                return
+
         job["logs"].append(f"✓ All {total_segments_count} speech chunks ready in cache!")
 
         # Step 3: Stitch Chapters
+        if job.get("cancel_requested"):
+            job["status"] = "stopped"
+            return
+
         job["step"] = 3
         job["step_name"] = "Stitching Continuous Chapter Tracks"
         job["progress_pct"] = 78.0
@@ -698,6 +726,11 @@ def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
 
         stitched_files = []
         for idx, cs in enumerate(all_scripts):
+            if job.get("cancel_requested"):
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Pipeline stopped during stitching.")
+                return
+
             audio_files = [engine.get_cache_path(s) for s in cs.segments]
             out_mp3 = os.path.join(chapters_dir, f"{cs.chapter_id}.mp3")
             stitcher.stitch_chapter(cs, audio_files, out_mp3)
@@ -708,6 +741,10 @@ def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
             job["logs"].append(f"✓ Stitched Chapter {idx + 1}/{len(all_scripts)}: {cs.title}")
 
         # Step 4: Package Master M4B
+        if job.get("cancel_requested"):
+            job["status"] = "stopped"
+            return
+
         job["step"] = 4
         job["step_name"] = "Packaging Master M4B Audiobook"
         job["progress_pct"] = 92.0
@@ -771,6 +808,8 @@ def start_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTasks):
         "progress_pct": 0.0,
         "current_item": 0,
         "total_items": 0,
+        "pause_requested": False,
+        "cancel_requested": False,
         "logs": ["Job queued..."],
         "result": None,
         "error": None
@@ -784,6 +823,32 @@ def get_job_status(job_id: str):
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs_db[job_id]
+
+@app.post("/api/jobs/{job_id}/pause")
+def toggle_pause_job(job_id: str):
+    """Pauses or resumes an active pipeline job."""
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs_db[job_id]
+    job["pause_requested"] = not job.get("pause_requested", False)
+    if job["pause_requested"]:
+        job["status"] = "paused"
+        job["logs"].append("⏸ Production paused by user.")
+    else:
+        job["status"] = "running"
+        job["logs"].append("▶ Production resumed by user.")
+    return {"success": True, "paused": job["pause_requested"], "status": job["status"]}
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    """Cancels/stops an active pipeline job."""
+    if job_id not in jobs_db:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs_db[job_id]
+    job["cancel_requested"] = True
+    job["status"] = "stopped"
+    job["logs"].append("🛑 Stop request received. Terminating job...")
+    return {"success": True, "status": "stopped"}
 
 @app.post("/api/tasks/generate")
 def batch_generate_audio(req: GenerateTaskRequest):
