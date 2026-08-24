@@ -30,6 +30,7 @@ class NovelCastStudio {
     // Top Nav & Mode Switcher
     this.projectSelect = document.getElementById('projectSelect');
     this.btnOpenNewProjectModal = document.getElementById('btnOpenNewProjectModal');
+    this.btnDeleteProject = document.getElementById('btnDeleteProject');
     this.btnRun1ClickPipeline = document.getElementById('btnRun1ClickPipeline');
     this.btnModeRemote = document.getElementById('btnModeRemote');
     this.btnModeLocal = document.getElementById('btnModeLocal');
@@ -136,11 +137,13 @@ class NovelCastStudio {
       });
     });
 
-    // Project Switcher
+    // Project Switcher & Actions
     this.projectSelect.addEventListener('change', (e) => {
       this.state.activeProject = e.target.value;
       this.loadProject();
     });
+
+    this.btnDeleteProject.addEventListener('click', () => this.deleteCurrentProject());
 
     // 1-Click Production from Header
     this.btnRun1ClickPipeline.addEventListener('click', () => {
@@ -296,21 +299,52 @@ class NovelCastStudio {
       if (!this.state.chaptersList.length) {
         this.chapterSelect.innerHTML = '<option>No chapters found</option>';
         this.scriptRowsContainer.innerHTML = '<div class="loading-state"><p>No chapters in this project.</p></div>';
-        return;
+        this.statSegments.textContent = '0 lines';
+        this.statCached.textContent = '0% cached';
+      } else {
+        this.state.chaptersList.forEach((ch, idx) => {
+          const opt = document.createElement('option');
+          opt.value = ch.file;
+          opt.textContent = `${idx + 1}. ${ch.title} (${ch.cached_segments}/${ch.total_segments} cached)`;
+          this.chapterSelect.appendChild(opt);
+        });
+
+        this.state.activeChapter = this.state.chaptersList[0].file;
+        await this.loadChapterScript(this.state.activeChapter);
       }
 
-      this.state.chaptersList.forEach((ch, idx) => {
-        const opt = document.createElement('option');
-        opt.value = ch.file;
-        opt.textContent = `${idx + 1}. ${ch.title} (${ch.cached_segments}/${ch.total_segments} cached)`;
-        this.chapterSelect.appendChild(opt);
-      });
-
-      this.state.activeChapter = this.state.chaptersList[0].file;
-      await this.loadChapterScript(this.state.activeChapter);
+      // Synchronize all other studio decks with the selected project
       this.updatePackagingMetadata();
+      this.renderChapterChecklist();
+      await this.detectProjectCharacters();
     } catch (e) {
       console.error('Failed to load project chapters:', e);
+    }
+  }
+
+  async deleteCurrentProject() {
+    const curProj = this.state.projectsList.find(p => p.id === this.state.activeProject);
+    const projName = curProj ? curProj.name : this.state.activeProject;
+
+    if (!confirm(`Are you sure you want to remove project "${projName}" from your workspace?`)) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/projects/${this.state.activeProject}`, {
+        method: 'DELETE'
+      });
+      const data = await resp.json();
+      if (data.success) {
+        alert(`✓ Project "${projName}" has been removed from workspace.`);
+        this.state.activeProject = null;
+        await this.loadProjectsList();
+      } else {
+        alert(`Could not delete project: ${data.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Error deleting project:', e);
+      alert('Failed to delete project.');
     }
   }
 

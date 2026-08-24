@@ -271,17 +271,27 @@ async def create_project(
 
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: str):
-    """Deletes a custom project from the registry."""
-    if not os.path.exists(PROJECTS_REGISTRY_FILE):
-        raise HTTPException(status_code=404, detail="No custom projects found")
+    """Deletes a project from the workspace registry."""
+    custom = {}
+    if os.path.exists(PROJECTS_REGISTRY_FILE):
+        try:
+            with open(PROJECTS_REGISTRY_FILE, "r", encoding="utf-8") as f:
+                custom = json.load(f)
+        except Exception:
+            custom = {}
 
-    with open(PROJECTS_REGISTRY_FILE, "r", encoding="utf-8") as f:
-        custom = json.load(f)
-
+    deleted = False
     if project_id in custom:
         del custom[project_id]
         with open(PROJECTS_REGISTRY_FILE, "w", encoding="utf-8") as f:
             json.dump(custom, f, ensure_ascii=False, indent=2)
+        deleted = True
+
+    if project_id in PROJECT_DIRS:
+        del PROJECT_DIRS[project_id]
+        deleted = True
+
+    if deleted:
         return {"success": True, "deleted": project_id}
 
     raise HTTPException(status_code=404, detail="Project not found in registry")
@@ -493,8 +503,17 @@ def detect_project_characters(project_id: str):
     if os.path.exists(scripts_dir):
         for f in sorted(os.listdir(scripts_dir)):
             if f.endswith(".json"):
-                with open(os.path.join(scripts_dir, f), "r", encoding="utf-8") as fp:
-                    scripts.append(ChapterScript(**json.load(fp)))
+                try:
+                    with open(os.path.join(scripts_dir, f), "r", encoding="utf-8") as fp:
+                        data = json.load(fp)
+                        if isinstance(data, dict):
+                            if "chapter_id" not in data:
+                                data["chapter_id"] = os.path.splitext(f)[0]
+                            if "title" not in data:
+                                data["title"] = os.path.splitext(f)[0]
+                            scripts.append(ChapterScript(**data))
+                except Exception:
+                    continue
 
     detected = detector.detect_from_scripts(scripts)
     
