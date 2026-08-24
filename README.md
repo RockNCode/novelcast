@@ -25,7 +25,6 @@ Most audiobook tools read books with a single flat narrator voice. Full-cast aud
 - **🔍 Smart Character Discovery**: Scans book dialogue, calculates line counts/percentages, quotes sample lines, and auto-matches reference voices from the Voice Bank.
 - **⚡ Dual-Mode OmniVoice Engine**: Seamlessly toggle between a **Remote Dual-GPU Worker Pool** (high-throughput parallel batch generation) and a **Local In-Process Engine** (Apple Silicon `mps` / CUDA / CPU) for offline auditioning.
 - **📊 Real-Time Progress Tracking**: Live glowing progress bars, step-by-step pipeline tracker, and streaming terminal logs.
-- **🎙️ Curated Voice Bank (25+ Voices)**: Includes studio-grade reference samples for iconic narrators (*Enrique Rocha, Jane, AMLO, Cherry Twinkle, Adam, Bella, Brian, etc.*).
 - **Chunk-Level SHA-256 Deduplication**: Edit a single line or tweak a character's tone without re-synthesizing unchanged sections.
 - **Conversational Audio Stitching**: Natural inter-speaker pause insertion and LUFS loudness normalization.
 - **Master Packaging**: Produces standard `.m4b` containers with embedded high-resolution cover art and chapter navigation markers.
