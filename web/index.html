@@ -15,64 +15,78 @@
     
     <!-- TOP HEADER NAVBAR -->
     <header class="studio-header">
-      <div class="brand-area">
-        <div class="logo-badge">NC</div>
-        <div class="brand-titles">
-          <h1>NovelCast Studio</h1>
-          <span class="brand-subtitle">Voice-Cloned AI Audiobook Workstation</span>
+      <div class="header-brand-row">
+        <div class="brand-area">
+          <div class="logo-badge">NC</div>
+          <div class="brand-titles">
+            <h1>NovelCast Studio</h1>
+            <span class="brand-subtitle">Voice-Cloned AI Audiobook Workstation</span>
+          </div>
         </div>
-      </div>
 
-      <!-- Project Workspace Selector -->
-      <div class="project-selector-group">
-        <label for="projectSelect">Project:</label>
-        <select id="projectSelect" class="studio-select">
-          <option value="vol2">Re:Zero Vol 2</option>
-          <option value="vol3">Re:Zero Vol 3</option>
-          <option value="dub">Mushoku Tensei Dub</option>
-        </select>
-        <button id="btnOpenNewProjectModal" class="btn btn-secondary btn-sm" title="Create a New Audiobook Project or Ingest EPUB">
-          <span>➕</span> New Project
-        </button>
-        <button id="btnDeleteProject" class="btn btn-secondary btn-sm" title="Delete current project from workspace">
-          <span>🗑️</span>
-        </button>
-        <button id="btnRun1ClickPipeline" class="btn btn-accent btn-sm" title="Run 1-Click Production from Script to Master M4B">
-          <span>🚀</span> 1-Click Production
+        <button id="btnMobileMenuToggle" class="mobile-menu-toggle" aria-label="Toggle navigation menu" title="Toggle Navigation Menu">
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
         </button>
       </div>
 
-      <!-- OmniVoice Dual-Mode Switcher -->
-      <div class="engine-deck">
-        <div class="engine-mode-toggle">
-          <button id="btnModeRemote" class="mode-btn active" title="Use Remote Dual-GPU Pool (Fastest)">
-            <span class="mode-icon">⚡</span> Remote GPU
+      <!-- Backdrop for mobile drawer -->
+      <div id="mobileMenuBackdrop" class="mobile-menu-backdrop hidden"></div>
+
+      <!-- Collapsible Menu for Mobile & Inline for Desktop -->
+      <div id="headerCollapsibleMenu" class="header-collapsible-menu">
+        <!-- Project Workspace Selector -->
+        <div class="project-selector-group">
+          <label for="projectSelect">Project:</label>
+          <select id="projectSelect" class="studio-select">
+            <option value="vol2">Re:Zero Vol 2</option>
+            <option value="vol3">Re:Zero Vol 3</option>
+            <option value="dub">Mushoku Tensei Dub</option>
+          </select>
+          <button id="btnOpenNewProjectModal" class="btn btn-secondary btn-sm" title="Create a New Audiobook Project or Ingest EPUB">
+            <span>➕</span> New Project
           </button>
-          <button id="btnModeLocal" class="mode-btn" title="Use Local In-Process Engine (Offline MPS/CUDA)">
-            <span class="mode-icon">💻</span> Local
+          <button id="btnDeleteProject" class="btn btn-secondary btn-sm" title="Delete current project from workspace">
+            <span>🗑️</span>
+          </button>
+          <button id="btnRun1ClickPipeline" class="btn btn-accent btn-sm" title="Run 1-Click Production from Script to Master M4B">
+            <span>🚀</span> 1-Click Production
           </button>
         </div>
-        <div id="engineStatusBadge" class="status-pill online">
-          <span class="pulse-dot"></span>
-          <span id="statusText">Remote GPU (18ms)</span>
-        </div>
-      </div>
 
-      <!-- Navigation Tabs -->
-      <nav class="studio-nav">
-        <button class="nav-tab active" data-tab="scriptStudio">
-          <span class="tab-icon">📖</span> Script Studio
-        </button>
-        <button class="nav-tab" data-tab="voiceCasting">
-          <span class="tab-icon">🎙️</span> Voice Casting
-        </button>
-        <button class="nav-tab" data-tab="packagingStudio">
-          <span class="tab-icon">📦</span> M4B Packaging
-        </button>
-        <button class="nav-tab" data-tab="dubbingStudio">
-          <span class="tab-icon">🌐</span> Dubbing
-        </button>
-      </nav>
+        <!-- OmniVoice Dual-Mode Switcher -->
+        <div class="engine-deck">
+          <div class="engine-mode-toggle">
+            <button id="btnModeRemote" class="mode-btn active" title="Use Remote Dual-GPU Pool (Fastest)">
+              <span class="mode-icon">⚡</span> Remote GPU
+            </button>
+            <button id="btnModeLocal" class="mode-btn" title="Use Local In-Process Engine (Offline MPS/CUDA)">
+              <span class="mode-icon">💻</span> Local
+            </button>
+          </div>
+          <div id="engineStatusBadge" class="status-pill online">
+            <span class="pulse-dot"></span>
+            <span id="statusText">Remote GPU (18ms)</span>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="studio-nav">
+          <button class="nav-tab active" data-tab="scriptStudio">
+            <span class="tab-icon">📖</span> Script Studio
+          </button>
+          <button class="nav-tab" data-tab="voiceCasting">
+            <span class="tab-icon">🎙️</span> Voice Casting
+          </button>
+          <button class="nav-tab" data-tab="packagingStudio">
+            <span class="tab-icon">📦</span> M4B Packaging
+          </button>
+          <button class="nav-tab" data-tab="dubbingStudio">
+            <span class="tab-icon">🌐</span> Dubbing
+          </button>
+        </nav>
+      </div>
     </header>
 
     <!-- MAIN STUDIO WORKSPACE -->

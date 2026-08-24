@@ -77,6 +77,83 @@ body {
   border-bottom: 1px solid var(--border-subtle);
   z-index: 100;
   gap: 1.25rem;
+  position: relative;
+}
+
+.header-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.header-collapsible-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: 1.25rem;
+}
+
+.mobile-menu-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 36px;
+  height: 36px;
+  background: var(--bg-panel-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 9px 7px;
+  cursor: pointer;
+  z-index: 120;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mobile-menu-toggle:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-accent);
+}
+
+.hamburger-bar {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background-color: var(--text-primary);
+  border-radius: 2px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Morph to '✕' when active */
+.mobile-menu-toggle.is-open .hamburger-bar:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.mobile-menu-toggle.is-open .hamburger-bar:nth-child(2) {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+.mobile-menu-toggle.is-open .hamburger-bar:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.mobile-menu-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 95;
+  transition: opacity 0.3s ease;
+}
+
+.mobile-menu-backdrop.hidden {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .brand-area {
@@ -1499,6 +1576,193 @@ body {
   font-size: 0.85rem;
   color: var(--text-secondary);
   margin-bottom: 0.6rem;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Responsive Breakpoints & Mobile Drawer Styles
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 1150px) {
+  .studio-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.75rem 1.25rem;
+    gap: 0.75rem;
+  }
+
+  .header-brand-row {
+    width: 100%;
+  }
+
+  .mobile-menu-toggle {
+    display: flex;
+  }
+
+  .header-collapsible-menu {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 1rem;
+    padding: 1rem 0 0.5rem;
+    border-top: 1px solid var(--border-subtle);
+    animation: slideDownMobileNav 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .header-collapsible-menu.is-open {
+    display: flex;
+  }
+
+  @keyframes slideDownMobileNav {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .project-selector-group {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    width: 100%;
+    background: var(--bg-panel-subtle);
+    padding: 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .project-selector-group select {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .engine-deck {
+    width: 100%;
+    justify-content: space-between;
+    padding: 6px 10px;
+  }
+
+  .studio-nav {
+    flex-direction: column;
+    width: 100%;
+    gap: 0.4rem;
+  }
+
+  .nav-tab {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 0.7rem 1rem;
+    background: var(--bg-panel-subtle);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.95rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .nav-tab.active {
+    background: var(--bg-card-hover);
+    border-color: var(--border-accent);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.1);
+  }
+
+  /* Script Studio Responsive adjustments */
+  .control-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .left-controls, .right-actions {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .center-search {
+    max-width: 100%;
+  }
+
+  /* Voice Casting Deck Responsive adjustments */
+  .casting-summary-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .casting-actions {
+    flex-wrap: wrap;
+  }
+
+  .deck-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Packaging Studio adjustments */
+  .packaging-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .studio-header {
+    padding: 0.6rem 0.85rem;
+  }
+
+  .brand-titles h1 {
+    font-size: 1rem;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+
+  .tab-panel {
+    padding: 1rem 0.75rem 6.5rem;
+  }
+
+  .player-bar-container {
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .player-actions-right {
+    display: none;
+  }
+
+  .player-left-info {
+    min-width: 120px;
+    max-width: 160px;
+  }
+
+  .script-row {
+    grid-template-columns: 36px 1fr !important;
+    grid-template-areas:
+      "avatar speaker"
+      "avatar text"
+      "controls controls";
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .avatar-col {
+    grid-area: avatar;
+  }
+
+  .speaker-col {
+    grid-area: speaker;
+  }
+
+  .text-col {
+    grid-area: text;
+  }
+
+  .actions-col {
+    grid-area: controls;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 0.5rem;
+  }
 }
 
 

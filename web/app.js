@@ -128,6 +128,11 @@ class NovelCastStudio {
     this.btnPausePipeline = document.getElementById('btnPausePipeline');
     this.btnStopPipeline = document.getElementById('btnStopPipeline');
 
+    // Mobile Header Navigation Elements
+    this.btnMobileMenuToggle = document.getElementById('btnMobileMenuToggle');
+    this.headerCollapsibleMenu = document.getElementById('headerCollapsibleMenu');
+    this.mobileMenuBackdrop = document.getElementById('mobileMenuBackdrop');
+
     this.activeJobPollTimer = null;
     this.currentJobId = null;
   }
@@ -257,6 +262,10 @@ class NovelCastStudio {
     // Pipeline Modal Controls
     this.btnPausePipeline.addEventListener('click', () => this.togglePauseJob());
     this.btnStopPipeline.addEventListener('click', () => this.stopJob());
+
+    // Mobile Hamburger Navigation
+    this.btnMobileMenuToggle?.addEventListener('click', () => this.toggleMobileMenu());
+    this.mobileMenuBackdrop?.addEventListener('click', () => this.closeMobileMenu());
   }
 
   async initApp() {
@@ -636,9 +645,33 @@ class NovelCastStudio {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Tab Switching
+  // Tab Switching & Mobile Menu Controls
   // ─────────────────────────────────────────────────────────────
+  toggleMobileMenu() {
+    if (!this.headerCollapsibleMenu) return;
+    const isOpen = this.headerCollapsibleMenu.classList.toggle('is-open');
+    if (this.btnMobileMenuToggle) {
+      this.btnMobileMenuToggle.classList.toggle('is-open', isOpen);
+    }
+    if (this.mobileMenuBackdrop) {
+      this.mobileMenuBackdrop.classList.toggle('hidden', !isOpen);
+    }
+  }
+
+  closeMobileMenu() {
+    if (this.headerCollapsibleMenu) {
+      this.headerCollapsibleMenu.classList.remove('is-open');
+    }
+    if (this.btnMobileMenuToggle) {
+      this.btnMobileMenuToggle.classList.remove('is-open');
+    }
+    if (this.mobileMenuBackdrop) {
+      this.mobileMenuBackdrop.classList.add('hidden');
+    }
+  }
+
   switchTab(tabKey) {
+    this.closeMobileMenu();
     this.navTabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === tabKey));
     
     const panelMap = {
