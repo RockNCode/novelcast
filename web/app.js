@@ -17,6 +17,7 @@ class NovelCastStudio {
       activeLineIndex: -1,
       continuousPlay: true,
       isPlaying: false,
+      playbackMode: 'script', // 'script' or 'sample'
       selectedNewProjectType: 'epub'
     };
 
@@ -768,6 +769,7 @@ class NovelCastStudio {
     const seg = this.state.segments[idx];
     if (!seg) return;
 
+    this.state.playbackMode = 'script';
     this.state.activeLineIndex = idx;
     this.highlightActiveRow(idx);
 
@@ -819,6 +821,7 @@ class NovelCastStudio {
         }
 
         if (autoPlay) {
+          this.state.playbackMode = 'script';
           this.audioPlayer.src = res.audio_url;
           this.audioPlayer.play();
           this.state.isPlaying = true;
@@ -843,17 +846,21 @@ class NovelCastStudio {
   }
 
   onLineAudioEnded() {
-    if (this.state.continuousPlay && this.state.activeLineIndex < this.state.segments.length - 1) {
+    if (this.state.playbackMode === 'script' && this.state.continuousPlay && this.state.activeLineIndex >= 0 && this.state.activeLineIndex < this.state.segments.length - 1) {
       this.playLineByIndex(this.state.activeLineIndex + 1);
     } else {
       this.state.isPlaying = false;
+      this.state.playbackMode = 'script';
       this.btnPlayPause.textContent = '▶';
     }
   }
 
   togglePlayPause() {
     if (!this.audioPlayer.src) {
-      if (this.state.segments.length) this.playLineByIndex(0);
+      if (this.state.segments.length) {
+        this.state.playbackMode = 'script';
+        this.playLineByIndex(0);
+      }
       return;
     }
 
@@ -869,13 +876,13 @@ class NovelCastStudio {
   }
 
   playPreviousLine() {
-    if (this.state.activeLineIndex > 0) {
+    if (this.state.playbackMode === 'script' && this.state.activeLineIndex > 0) {
       this.playLineByIndex(this.state.activeLineIndex - 1);
     }
   }
 
   playNextLine() {
-    if (this.state.activeLineIndex < this.state.segments.length - 1) {
+    if (this.state.playbackMode === 'script' && this.state.activeLineIndex >= 0 && this.state.activeLineIndex < this.state.segments.length - 1) {
       this.playLineByIndex(this.state.activeLineIndex + 1);
     }
   }
@@ -992,9 +999,14 @@ class NovelCastStudio {
 
       const btnAudition = card.querySelector('.btn-audition-sample');
       btnAudition.addEventListener('click', () => {
+        this.state.playbackMode = 'sample';
+        this.state.activeLineIndex = -1;
+        document.querySelectorAll('.script-row').forEach(r => r.classList.remove('active-playing'));
+
         const sampleUrl = `/api/audio/sample?name=${encodeURIComponent(select.value)}`;
         this.audioPlayer.src = sampleUrl;
         this.audioPlayer.play();
+        this.state.isPlaying = true;
         this.playerSpeaker.textContent = char.name;
         this.playerLineText.textContent = `Auditioning voice clip: ${select.value}`;
         this.btnPlayPause.textContent = '⏸';
