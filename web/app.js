@@ -265,7 +265,21 @@ class NovelCastStudio {
 
     // Mobile Hamburger Navigation
     this.btnMobileMenuToggle?.addEventListener('click', () => this.toggleMobileMenu());
-    this.mobileMenuBackdrop?.addEventListener('click', () => this.closeMobileMenu());
+    
+    // Auto-close mobile menu on window resize to desktop or click outside
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 1150) {
+        this.closeMobileMenu();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (this.headerCollapsibleMenu?.classList.contains('is-open')) {
+        if (!e.target.closest('.studio-header')) {
+          this.closeMobileMenu();
+        }
+      }
+    });
   }
 
   async initApp() {
@@ -653,9 +667,6 @@ class NovelCastStudio {
     if (this.btnMobileMenuToggle) {
       this.btnMobileMenuToggle.classList.toggle('is-open', isOpen);
     }
-    if (this.mobileMenuBackdrop) {
-      this.mobileMenuBackdrop.classList.toggle('hidden', !isOpen);
-    }
   }
 
   closeMobileMenu() {
@@ -664,9 +675,6 @@ class NovelCastStudio {
     }
     if (this.btnMobileMenuToggle) {
       this.btnMobileMenuToggle.classList.remove('is-open');
-    }
-    if (this.mobileMenuBackdrop) {
-      this.mobileMenuBackdrop.classList.add('hidden');
     }
   }
 

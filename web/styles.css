@@ -72,8 +72,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1.5rem;
-  background: rgba(13, 18, 28, 0.85);
-  backdrop-filter: blur(16px);
+  background: #0d121c;
   border-bottom: 1px solid var(--border-subtle);
   z-index: 100;
   gap: 1.25rem;
@@ -136,24 +135,6 @@ body {
 
 .mobile-menu-toggle.is-open .hamburger-bar:nth-child(3) {
   transform: translateY(-6px) rotate(-45deg);
-}
-
-.mobile-menu-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  z-index: 95;
-  transition: opacity 0.3s ease;
-}
-
-.mobile-menu-backdrop.hidden {
-  display: none;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .brand-area {
@@ -1581,6 +1562,68 @@ body {
 /* ─────────────────────────────────────────────────────────────
    Responsive Breakpoints & Mobile Drawer Styles
    ───────────────────────────────────────────────────────────── */
+@media (min-width: 1151px) {
+  .studio-header {
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 0.75rem 1.5rem !important;
+  }
+
+  .header-brand-row {
+    width: auto !important;
+  }
+
+  .mobile-menu-toggle {
+    display: none !important;
+  }
+
+  .header-collapsible-menu {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    flex: 1 !important;
+    gap: 1.25rem !important;
+    padding: 0 !important;
+    border: none !important;
+    animation: none !important;
+  }
+
+  .project-selector-group {
+    background: transparent !important;
+    padding: 0 !important;
+    border: none !important;
+    width: auto !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .engine-deck {
+    width: auto !important;
+    padding: 4px 8px !important;
+  }
+
+  .studio-nav {
+    flex-direction: row !important;
+    width: auto !important;
+    gap: 0.5rem !important;
+  }
+
+  .nav-tab {
+    width: auto !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0.5rem 1rem !important;
+    box-shadow: none !important;
+  }
+
+  .nav-tab.active {
+    background: var(--bg-card-hover) !important;
+    border: 1px solid var(--border-subtle) !important;
+    box-shadow: none !important;
+  }
+}
+
 @media (max-width: 1150px) {
   .studio-header {
     flex-direction: column;
