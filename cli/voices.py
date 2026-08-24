@@ -84,3 +84,51 @@ def add_voice(
     )
     vb.add_character(name, voice)
     console.print(f"[bold green]✓ Saved character voice profile for:[/bold green] [cyan]{name}[/cyan]")
+
+@app.command("remove")
+def remove_voice(
+    name: str = typer.Argument(..., help="Character name to remove"),
+    config: str = typer.Option("voice_config.json", "--config", "-c", help="Path to voice_config.json")
+):
+    """Remove a character voice profile from voice_config.json."""
+    vb = VoiceBank(config_path=config)
+    if name in vb.config.characters:
+        del vb.config.characters[name]
+        vb.save()
+        console.print(f"[bold green]✓ Removed character voice profile:[/bold green] [cyan]{name}[/cyan]")
+    else:
+        console.print(f"[bold red]✗ Character '{name}' not found in voice config.[/bold red]")
+
+@app.command("ingest")
+def ingest_voice(
+    audio_path: str = typer.Argument(..., help="Path to reference audio file (.wav, .mp3, .flac)"),
+    speaker_name: str = typer.Option(None, "--name", "-n", help="Character / Speaker name (default derived from filename)"),
+    category: str = typer.Option("custom", "--category", "-cat", help="Target subfolder in voice_bank/ (e.g. custom, all_voices)"),
+    gender: str = typer.Option("unspecified", "--gender", "-g", help="Gender (male, female, kid, neutral)"),
+    instruct: Optional[str] = typer.Option(None, "--instruct", "-i", help="Instruct delivery prompt"),
+    config: str = typer.Option("voice_config.json", "--config", "-c", help="Path to voice_config.json")
+):
+    """Copy an audio file into the Voice Bank and register its character profile."""
+    if not os.path.exists(audio_path):
+        console.print(f"[bold red]Error: File '{audio_path}' not found.[/bold red]")
+        raise typer.Exit(code=1)
+
+    import shutil
+    base_file = os.path.basename(audio_path)
+    target_dir = os.path.join("voice_bank", category) if category != "root" else "voice_bank"
+    os.makedirs(target_dir, exist_ok=True)
+    target_path = os.path.join(target_dir, base_file)
+
+    shutil.copy2(audio_path, target_path)
+    rel_path = os.path.relpath(target_path, "voice_bank")
+    
+    char_key = speaker_name or os.path.splitext(base_file)[0].replace("_", " ").title()
+    vb = VoiceBank(config_path=config)
+    vb.config.characters[char_key] = CharacterVoice(
+        gender=gender,
+        instruct=instruct,
+        reference_audio=f"voice_bank/{rel_path}",
+        description=f"Ingested audio sample: {base_file}"
+    )
+    vb.save()
+    console.print(f"[bold green]✓ Ingested and registered voice sample:[/bold green] [cyan]{char_key}[/cyan] -> [dim]{target_path}[/dim]")

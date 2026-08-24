@@ -18,10 +18,18 @@ class NovelCastStudio {
       continuousPlay: true,
       isPlaying: false,
       playbackMode: 'script', // 'script' or 'sample'
-      selectedNewProjectType: 'epub'
+      selectedNewProjectType: 'epub',
+      librarySamples: [],
+      libraryCharacters: {},
+      libraryFilterCategory: 'all',
+      libraryFilterGender: 'all',
+      librarySearchQuery: '',
+      activeVoiceDeck: 'casting'
     };
 
     this.audioPlayer = document.getElementById('globalAudioPlayer');
+    this.selectedUploadFile = null;
+    this.editingProfileName = null;
     this.initElements();
     this.bindEvents();
     this.initApp();
@@ -50,12 +58,58 @@ class NovelCastStudio {
     this.btnStitchActiveChapter = document.getElementById('btnStitchActiveChapter');
     this.scriptRowsContainer = document.getElementById('scriptRowsContainer');
 
-    // Tab 2: Voice Casting
+    // Tab 2: Voice Casting & Voice Bank Manager
+    this.subtabCasting = document.getElementById('subtabCasting');
+    this.subtabLibrary = document.getElementById('subtabLibrary');
+    this.deckCharacterCasting = document.getElementById('deckCharacterCasting');
+    this.deckVoiceLibrary = document.getElementById('deckVoiceLibrary');
+    this.countLibraryTotal = document.getElementById('countLibraryTotal');
+    this.inputVoiceSearch = document.getElementById('inputVoiceSearch');
+    this.voiceCategoryFilters = document.getElementById('voiceCategoryFilters');
+    this.voiceGenderFilters = document.getElementById('voiceGenderFilters');
+    this.voiceLibraryGrid = document.getElementById('voiceLibraryGrid');
+    this.btnOpenUploadModal = document.getElementById('btnOpenUploadModal');
+    this.btnOpenProfileModal = document.getElementById('btnOpenProfileModal');
     this.castCardsGrid = document.getElementById('castCardsGrid');
     this.btnRefreshVoices = document.getElementById('btnRefreshVoices');
     this.btnAutoDetectCharacters = document.getElementById('btnAutoDetectCharacters');
     this.btnSaveVoiceCasting = document.getElementById('btnSaveVoiceCasting');
     this.detectedCharBadge = document.getElementById('detectedCharBadge');
+
+    // Upload Voice Modal
+    this.modalUploadVoice = document.getElementById('modalUploadVoice');
+    this.btnCloseUploadVoiceModal = document.getElementById('btnCloseUploadVoiceModal');
+    this.btnCancelUploadVoice = document.getElementById('btnCancelUploadVoice');
+    this.voiceDropzone = document.getElementById('voiceDropzone');
+    this.inputVoiceFile = document.getElementById('inputVoiceFile');
+    this.btnBrowseVoiceFile = document.getElementById('btnBrowseVoiceFile');
+    this.uploadPreviewSection = document.getElementById('uploadPreviewSection');
+    this.uploadPreviewFilename = document.getElementById('uploadPreviewFilename');
+    this.uploadPreviewFilesize = document.getElementById('uploadPreviewFilesize');
+    this.audioUploadPreview = document.getElementById('audioUploadPreview');
+    this.inputUploadVoiceName = document.getElementById('inputUploadVoiceName');
+    this.selectUploadCategory = document.getElementById('selectUploadCategory');
+    this.selectUploadGender = document.getElementById('selectUploadGender');
+    this.inputUploadInstruct = document.getElementById('inputUploadInstruct');
+    this.inputUploadDescription = document.getElementById('inputUploadDescription');
+    this.btnSubmitUploadVoice = document.getElementById('btnSubmitUploadVoice');
+
+    // Voice Profile Modal
+    this.modalVoiceProfile = document.getElementById('modalVoiceProfile');
+    this.profileModalTitle = document.getElementById('profileModalTitle');
+    this.btnCloseProfileModal = document.getElementById('btnCloseProfileModal');
+    this.btnCancelProfile = document.getElementById('btnCancelProfile');
+    this.inputProfileName = document.getElementById('inputProfileName');
+    this.selectProfileGender = document.getElementById('selectProfileGender');
+    this.selectProfileRefAudio = document.getElementById('selectProfileRefAudio');
+    this.inputProfileInstruct = document.getElementById('inputProfileInstruct');
+    this.sliderProfileSpeed = document.getElementById('sliderProfileSpeed');
+    this.valProfileSpeed = document.getElementById('valProfileSpeed');
+    this.sliderProfileGuidance = document.getElementById('sliderProfileGuidance');
+    this.valProfileGuidance = document.getElementById('valProfileGuidance');
+    this.inputProfileDescription = document.getElementById('inputProfileDescription');
+    this.btnDeleteProfile = document.getElementById('btnDeleteProfile');
+    this.btnSubmitProfile = document.getElementById('btnSubmitProfile');
 
     // Tab 3: M4B Packaging
     this.txtBookTitle = document.getElementById('txtBookTitle');
@@ -224,6 +278,112 @@ class NovelCastStudio {
     this.btnRefreshVoices.addEventListener('click', () => this.loadVoiceBank());
     this.btnAutoDetectCharacters.addEventListener('click', () => this.detectProjectCharacters());
     this.btnSaveVoiceCasting.addEventListener('click', () => this.saveBatchVoiceCasting());
+
+    // Voice Bank Sub-Nav Switcher
+    if (this.subtabCasting) {
+      this.subtabCasting.addEventListener('click', () => this.switchVoiceDeck('casting'));
+    }
+    if (this.subtabLibrary) {
+      this.subtabLibrary.addEventListener('click', () => this.switchVoiceDeck('library'));
+    }
+
+    // Voice Bank Upload Modal Events
+    if (this.btnOpenUploadModal) {
+      this.btnOpenUploadModal.addEventListener('click', () => this.openUploadVoiceModal());
+    }
+    if (this.btnCloseUploadVoiceModal) {
+      this.btnCloseUploadVoiceModal.addEventListener('click', () => this.closeUploadVoiceModal());
+    }
+    if (this.btnCancelUploadVoice) {
+      this.btnCancelUploadVoice.addEventListener('click', () => this.closeUploadVoiceModal());
+    }
+    if (this.btnBrowseVoiceFile) {
+      this.btnBrowseVoiceFile.addEventListener('click', () => this.inputVoiceFile.click());
+    }
+    if (this.inputVoiceFile) {
+      this.inputVoiceFile.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.handleVoiceFileSelect(e.target.files[0]);
+        }
+      });
+    }
+
+    // Voice Dropzone Drag & Drop
+    if (this.voiceDropzone) {
+      this.voiceDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        this.voiceDropzone.classList.add('dragover');
+      });
+      this.voiceDropzone.addEventListener('dragleave', () => {
+        this.voiceDropzone.classList.remove('dragover');
+      });
+      this.voiceDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        this.voiceDropzone.classList.remove('dragover');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          this.handleVoiceFileSelect(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    if (this.btnSubmitUploadVoice) {
+      this.btnSubmitUploadVoice.addEventListener('click', () => this.submitVoiceUpload());
+    }
+
+    // Voice Profile Modal Events
+    if (this.btnOpenProfileModal) {
+      this.btnOpenProfileModal.addEventListener('click', () => this.openVoiceProfileModal());
+    }
+    if (this.btnCloseProfileModal) {
+      this.btnCloseProfileModal.addEventListener('click', () => this.closeVoiceProfileModal());
+    }
+    if (this.btnCancelProfile) {
+      this.btnCancelProfile.addEventListener('click', () => this.closeVoiceProfileModal());
+    }
+    if (this.sliderProfileSpeed) {
+      this.sliderProfileSpeed.addEventListener('input', (e) => {
+        this.valProfileSpeed.textContent = e.target.value;
+      });
+    }
+    if (this.sliderProfileGuidance) {
+      this.sliderProfileGuidance.addEventListener('input', (e) => {
+        this.valProfileGuidance.textContent = e.target.value;
+      });
+    }
+    if (this.btnSubmitProfile) {
+      this.btnSubmitProfile.addEventListener('click', () => this.submitVoiceProfile());
+    }
+    if (this.btnDeleteProfile) {
+      this.btnDeleteProfile.addEventListener('click', () => this.deleteCurrentEditingProfile());
+    }
+
+    // Voice Library Search & Filter Events
+    if (this.inputVoiceSearch) {
+      this.inputVoiceSearch.addEventListener('input', (e) => {
+        this.state.librarySearchQuery = e.target.value.toLowerCase().trim();
+        this.renderVoiceLibrary();
+      });
+    }
+    if (this.voiceCategoryFilters) {
+      this.voiceCategoryFilters.querySelectorAll('.filter-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          this.voiceCategoryFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          this.state.libraryFilterCategory = pill.getAttribute('data-category');
+          this.renderVoiceLibrary();
+        });
+      });
+    }
+    if (this.voiceGenderFilters) {
+      this.voiceGenderFilters.querySelectorAll('.filter-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          this.voiceGenderFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          this.state.libraryFilterGender = pill.getAttribute('data-gender');
+          this.renderVoiceLibrary();
+        });
+      });
+    }
 
     // Pause Timing Sliders
     this.sliderSpeakerChange.addEventListener('input', (e) => {
@@ -1029,10 +1189,421 @@ class NovelCastStudio {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Voice Casting & Character Discovery
+  // Voice Casting & Voice Bank Manager Deck
   // ─────────────────────────────────────────────────────────────
+  switchVoiceDeck(deckName) {
+    this.state.activeVoiceDeck = deckName;
+    if (deckName === 'casting') {
+      this.subtabCasting?.classList.add('active');
+      this.subtabLibrary?.classList.remove('active');
+      this.deckCharacterCasting?.classList.remove('hidden');
+      this.deckVoiceLibrary?.classList.add('hidden');
+    } else {
+      this.subtabLibrary?.classList.add('active');
+      this.subtabCasting?.classList.remove('active');
+      this.deckVoiceLibrary?.classList.remove('hidden');
+      this.deckCharacterCasting?.classList.add('hidden');
+      this.renderVoiceLibrary();
+    }
+  }
+
   async loadVoiceBank() {
-    await this.detectProjectCharacters();
+    await Promise.all([
+      this.detectProjectCharacters(),
+      this.loadVoiceBankLibrary()
+    ]);
+  }
+
+  async loadVoiceBankLibrary() {
+    try {
+      const resp = await fetch('/api/voice-bank/library');
+      const data = await resp.json();
+      this.state.librarySamples = data.samples || [];
+      this.state.libraryCharacters = data.characters || {};
+      
+      if (this.countLibraryTotal) {
+        this.countLibraryTotal.textContent = this.state.librarySamples.length;
+      }
+
+      this.renderVoiceLibrary();
+    } catch (e) {
+      console.error('Failed to load voice bank library:', e);
+    }
+  }
+
+  renderVoiceLibrary() {
+    if (!this.voiceLibraryGrid) return;
+    this.voiceLibraryGrid.innerHTML = '';
+
+    const query = this.state.librarySearchQuery || '';
+    const catFilter = this.state.libraryFilterCategory || 'all';
+    const genderFilter = this.state.libraryFilterGender || 'all';
+
+    const filtered = this.state.librarySamples.filter(sample => {
+      // 1. Search Query Filter
+      if (query) {
+        const matchesName = sample.name.toLowerCase().includes(query);
+        const matchesLabel = sample.label.toLowerCase().includes(query);
+        const matchesChar = (sample.assigned_characters || []).some(c => c.toLowerCase().includes(query));
+        if (!matchesName && !matchesLabel && !matchesChar) return false;
+      }
+
+      // 2. Category Filter
+      if (catFilter !== 'all') {
+        if (catFilter === 'Custom' && !sample.category.includes('Custom')) return false;
+        if (catFilter === 'Master Bank' && !sample.category.includes('Master')) return false;
+        if (catFilter === 'ElevenLabs Archive' && !sample.category.includes('ElevenLabs')) return false;
+        if (catFilter === 'Default / Root' && !sample.category.includes('Default') && !sample.category.includes('Root')) return false;
+      }
+
+      // 3. Gender Filter
+      if (genderFilter !== 'all') {
+        const boundProfile = (sample.assigned_characters || []).map(c => this.state.libraryCharacters[c]).find(p => p);
+        const sampleGender = (boundProfile?.gender || '').toLowerCase();
+        if (sampleGender !== genderFilter && sampleGender !== 'unspecified') return false;
+      }
+
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      this.voiceLibraryGrid.innerHTML = `
+        <div class="empty-library-state glass-panel" style="grid-column: 1 / -1; padding: 3rem; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🎙️</div>
+          <h3>No Voice Samples Match Current Filter</h3>
+          <p class="panel-desc">Try changing your search keywords or click "Upload Voice Sample" to add new clips.</p>
+        </div>
+      `;
+      return;
+    }
+
+    filtered.forEach(sample => {
+      // Category Badge Class
+      let catClass = 'cat-default';
+      if (sample.category.includes('ElevenLabs')) catClass = 'cat-elevenlabs';
+      else if (sample.category.includes('Master')) catClass = 'cat-master';
+      else if (sample.category.includes('Custom')) catClass = 'cat-custom';
+
+      // Find bound profile details
+      const primaryChar = (sample.assigned_characters && sample.assigned_characters[0]) || null;
+      const profile = primaryChar ? this.state.libraryCharacters[primaryChar] : null;
+      const gender = profile?.gender || 'unspecified';
+      const instruct = profile?.instruct || null;
+
+      const card = document.createElement('div');
+      card.className = 'voice-library-card';
+      card.innerHTML = `
+        <div class="voice-card-header">
+          <div class="voice-card-title-group">
+            <span class="voice-card-title">${this.escapeHtml(primaryChar || sample.label)}</span>
+            <span class="voice-card-filename">${this.escapeHtml(sample.name)}</span>
+          </div>
+          <span class="voice-badge ${catClass}">${this.escapeHtml(sample.category)}</span>
+        </div>
+
+        <div class="voice-card-tags">
+          <span class="voice-tag">📊 ${sample.size_kb} KB</span>
+          ${gender !== 'unspecified' ? `<span class="voice-tag">⚧ ${gender}</span>` : ''}
+          ${primaryChar ? `<span class="voice-tag" style="color: var(--accent-color);">👤 Bound: ${this.escapeHtml(primaryChar)}</span>` : '<span class="voice-tag" style="color: var(--text-muted);">Unbound Clip</span>'}
+        </div>
+
+        ${instruct ? `<div class="char-quote-box" style="font-size: 0.75rem; padding: 0.4rem 0.6rem;">Delivery: <em>"${this.escapeHtml(instruct)}"</em></div>` : ''}
+
+        <div class="voice-card-audio">
+          <button class="btn-audition-card btn-audition-library" title="Play Voice Sample">
+            ▶
+          </button>
+          <span class="voice-card-meta-text">${sample.filename}</span>
+        </div>
+
+        <div class="voice-card-actions">
+          <button class="btn btn-secondary btn-sm btn-edit-profile" title="Configure voice profile delivery parameters">
+            <span>✏️</span> Edit Profile
+          </button>
+          <button class="btn btn-danger btn-sm btn-delete-sample" title="Delete voice audio file">
+            <span>🗑️</span>
+          </button>
+        </div>
+      `;
+
+      // Play sample button
+      const btnPlay = card.querySelector('.btn-audition-library');
+      btnPlay.addEventListener('click', () => {
+        this.state.playbackMode = 'sample';
+        this.state.activeLineIndex = -1;
+        document.querySelectorAll('.script-row').forEach(r => r.classList.remove('active-playing'));
+
+        this.audioPlayer.src = sample.audio_url;
+        this.audioPlayer.play();
+        this.state.isPlaying = true;
+        this.playerSpeaker.textContent = primaryChar || sample.label;
+        this.playerLineText.textContent = `Auditioning voice library sample: ${sample.name}`;
+        this.btnPlayPause.textContent = '⏸';
+      });
+
+      // Edit profile button
+      const btnEdit = card.querySelector('.btn-edit-profile');
+      btnEdit.addEventListener('click', () => {
+        this.openVoiceProfileModal(primaryChar, sample.name);
+      });
+
+      // Delete sample button
+      const btnDelete = card.querySelector('.btn-delete-sample');
+      btnDelete.addEventListener('click', () => {
+        this.deleteVoiceSample(sample.name);
+      });
+
+      this.voiceLibraryGrid.appendChild(card);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Upload Voice Sample Modal
+  // ─────────────────────────────────────────────────────────────
+  openUploadVoiceModal() {
+    if (!this.modalUploadVoice) return;
+    this.selectedUploadFile = null;
+    this.inputVoiceFile.value = '';
+    this.inputUploadVoiceName.value = '';
+    this.inputUploadInstruct.value = '';
+    this.inputUploadDescription.value = '';
+    this.selectUploadCategory.value = 'custom';
+    this.selectUploadGender.value = 'unspecified';
+    this.uploadPreviewSection.classList.add('hidden');
+    this.audioUploadPreview.src = '';
+    this.modalUploadVoice.classList.remove('hidden');
+  }
+
+  closeUploadVoiceModal() {
+    if (!this.modalUploadVoice) return;
+    this.modalUploadVoice.classList.add('hidden');
+    this.audioUploadPreview.pause();
+    this.audioUploadPreview.src = '';
+  }
+
+  handleVoiceFileSelect(file) {
+    if (!file) return;
+    this.selectedUploadFile = file;
+
+    // Auto-suggest name from file
+    if (!this.inputUploadVoiceName.value) {
+      const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+      this.inputUploadVoiceName.value = baseName.replace(/[_\-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    this.uploadPreviewFilename.textContent = file.name;
+    this.uploadPreviewFilesize.textContent = `${Math.round(file.size / 1024)} KB`;
+    this.audioUploadPreview.src = URL.createObjectURL(file);
+    this.uploadPreviewSection.classList.remove('hidden');
+  }
+
+  async submitVoiceUpload() {
+    if (!this.selectedUploadFile) {
+      alert('Please select or drop an audio file (.wav, .mp3, .flac) to upload.');
+      return;
+    }
+
+    const voiceName = this.inputUploadVoiceName.value.trim();
+    if (!voiceName) {
+      alert('Please enter a Character / Speaker Name for this voice.');
+      return;
+    }
+
+    this.btnSubmitUploadVoice.disabled = true;
+    this.btnSubmitUploadVoice.textContent = '⏳ Uploading & Registering...';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', this.selectedUploadFile);
+      formData.append('voice_name', voiceName);
+      formData.append('category', this.selectUploadCategory.value);
+      formData.append('gender', this.selectUploadGender.value);
+      formData.append('instruct', this.inputUploadInstruct.value.trim() || '');
+      formData.append('description', this.inputUploadDescription.value.trim() || '');
+
+      const resp = await fetch('/api/voice-bank/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await resp.json();
+      this.btnSubmitUploadVoice.disabled = false;
+      this.btnSubmitUploadVoice.innerHTML = '<span>🚀</span> Upload & Register Voice';
+
+      if (data.success) {
+        alert(`✓ Voice sample "${voiceName}" uploaded and registered successfully!`);
+        this.closeUploadVoiceModal();
+        await this.loadVoiceBankLibrary();
+        await this.detectProjectCharacters();
+      } else {
+        alert(`Upload failed: ${data.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Failed to upload voice:', e);
+      this.btnSubmitUploadVoice.disabled = false;
+      this.btnSubmitUploadVoice.innerHTML = '<span>🚀</span> Upload & Register Voice';
+      alert('Failed to upload voice sample.');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Character Voice Profile Modal
+  // ─────────────────────────────────────────────────────────────
+  openVoiceProfileModal(charName = null, defaultSamplePath = null) {
+    if (!this.modalVoiceProfile) return;
+    this.editingProfileName = charName;
+
+    // Populate Sample Options
+    this.selectProfileRefAudio.innerHTML = '';
+    this.state.librarySamples.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = `${s.name} (${s.label})`;
+      this.selectProfileRefAudio.appendChild(opt);
+    });
+
+    if (charName && this.state.libraryCharacters[charName]) {
+      const prof = this.state.libraryCharacters[charName];
+      this.profileModalTitle.textContent = `👤 Edit Profile: ${charName}`;
+      this.inputProfileName.value = charName;
+      this.inputProfileName.disabled = true; // Key immutable during edit
+      this.selectProfileGender.value = prof.gender || 'unspecified';
+      this.inputProfileInstruct.value = prof.instruct || '';
+      this.sliderProfileSpeed.value = prof.speed || 1.0;
+      this.valProfileSpeed.textContent = prof.speed || 1.0;
+      this.sliderProfileGuidance.value = prof.guidance_scale || 2.8;
+      this.valProfileGuidance.textContent = prof.guidance_scale || 2.8;
+      this.inputProfileDescription.value = prof.description || '';
+
+      // Match reference audio
+      const ref = prof.reference_audio ? prof.reference_audio.replace(/^voice_bank\//, '') : '';
+      this.selectProfileRefAudio.value = ref || (defaultSamplePath || '');
+      this.btnDeleteProfile.classList.remove('hidden');
+    } else {
+      this.profileModalTitle.textContent = '👤 Create New Voice Profile';
+      this.inputProfileName.value = charName || '';
+      this.inputProfileName.disabled = false;
+      this.selectProfileGender.value = 'female';
+      this.inputProfileInstruct.value = '';
+      this.sliderProfileSpeed.value = 1.0;
+      this.valProfileSpeed.textContent = '1.0';
+      this.sliderProfileGuidance.value = 2.8;
+      this.valProfileGuidance.textContent = '2.8';
+      this.inputProfileDescription.value = '';
+      if (defaultSamplePath) {
+        this.selectProfileRefAudio.value = defaultSamplePath;
+      }
+      this.btnDeleteProfile.classList.add('hidden');
+    }
+
+    this.modalVoiceProfile.classList.remove('hidden');
+  }
+
+  closeVoiceProfileModal() {
+    if (!this.modalVoiceProfile) return;
+    this.modalVoiceProfile.classList.add('hidden');
+    this.editingProfileName = null;
+  }
+
+  async submitVoiceProfile() {
+    const charName = this.inputProfileName.value.trim();
+    const sample = this.selectProfileRefAudio.value;
+
+    if (!charName) {
+      alert('Please enter a Character Name.');
+      return;
+    }
+    if (!sample) {
+      alert('Please select a Reference Audio Sample.');
+      return;
+    }
+
+    this.btnSubmitProfile.disabled = true;
+    this.btnSubmitProfile.textContent = 'Saving...';
+
+    try {
+      const payload = {
+        name: charName,
+        reference_audio: sample,
+        gender: this.selectProfileGender.value,
+        instruct: this.inputProfileInstruct.value.trim() || null,
+        speed: parseFloat(this.sliderProfileSpeed.value) || 1.0,
+        guidance_scale: parseFloat(this.sliderProfileGuidance.value) || 2.8,
+        description: this.inputProfileDescription.value.trim() || null
+      };
+
+      const resp = await fetch('/api/voice-bank/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await resp.json();
+      this.btnSubmitProfile.disabled = false;
+      this.btnSubmitProfile.innerHTML = '<span>💾</span> Save Voice Profile';
+
+      if (data.success) {
+        alert(`✓ Voice Profile for "${charName}" saved successfully!`);
+        this.closeVoiceProfileModal();
+        await this.loadVoiceBankLibrary();
+        await this.detectProjectCharacters();
+      } else {
+        alert(`Failed to save profile: ${data.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Failed to save profile:', e);
+      this.btnSubmitProfile.disabled = false;
+      this.btnSubmitProfile.innerHTML = '<span>💾</span> Save Voice Profile';
+      alert('Failed to save profile.');
+    }
+  }
+
+  async deleteCurrentEditingProfile() {
+    if (!this.editingProfileName) return;
+    if (!confirm(`Are you sure you want to delete voice profile for "${this.editingProfileName}"?`)) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/voice-bank/profiles/${encodeURIComponent(this.editingProfileName)}`, {
+        method: 'DELETE'
+      });
+      const data = await resp.json();
+      if (data.success) {
+        alert(`✓ Profile "${this.editingProfileName}" deleted.`);
+        this.closeVoiceProfileModal();
+        await this.loadVoiceBankLibrary();
+        await this.detectProjectCharacters();
+      } else {
+        alert(`Failed to delete profile: ${data.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Failed to delete profile:', e);
+      alert('Failed to delete profile.');
+    }
+  }
+
+  async deleteVoiceSample(sampleName) {
+    if (!confirm(`Are you sure you want to delete audio sample "${sampleName}" from the Voice Bank?\n\nThis will remove the file from disk.`)) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/voice-bank/samples?name=${encodeURIComponent(sampleName)}`, {
+        method: 'DELETE'
+      });
+      const data = await resp.json();
+      if (data.success) {
+        alert(`✓ Voice sample "${sampleName}" deleted from Voice Bank.`);
+        await this.loadVoiceBankLibrary();
+        await this.detectProjectCharacters();
+      } else {
+        alert(`Failed to delete voice sample: ${data.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Failed to delete voice sample:', e);
+      alert('Failed to delete voice sample.');
+    }
   }
 
   async detectProjectCharacters() {

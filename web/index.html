@@ -150,26 +150,78 @@
       <!-- ══════════════════════════════════════════════════════ -->
       <section id="tabVoiceCasting" class="tab-panel">
         <div class="casting-header glass-panel">
-          <div>
-            <h2>Character Voice Casting Deck</h2>
-            <p class="panel-desc">Assign clean audio reference samples and emotion presets to each character in the novel.</p>
+          <div class="casting-header-left">
+            <h2>Voice Casting & Voice Bank Manager</h2>
+            <p class="panel-desc">Manage voice reference audio clips, create custom character profiles, and assign voices to novel characters.</p>
+            
+            <div class="deck-subnav">
+              <button id="subtabCasting" class="subtab-btn active">
+                <span>🎭</span> Project Character Casting
+              </button>
+              <button id="subtabLibrary" class="subtab-btn">
+                <span>🎙️</span> Voice Bank Library (<span id="countLibraryTotal">0</span>)
+              </button>
+            </div>
           </div>
+
           <div class="casting-actions">
             <span id="detectedCharBadge" class="status-pill info">Scanning characters...</span>
-            <button id="btnAutoDetectCharacters" class="btn btn-accent">
-              <span>🔍</span> Auto-Detect Characters
+            <button id="btnOpenUploadModal" class="btn btn-accent">
+              <span>➕</span> Upload Voice Sample
+            </button>
+            <button id="btnOpenProfileModal" class="btn btn-secondary">
+              <span>👤</span> New Voice Profile
+            </button>
+            <button id="btnAutoDetectCharacters" class="btn btn-secondary">
+              <span>🔍</span> Auto-Detect
             </button>
             <button id="btnSaveVoiceCasting" class="btn btn-secondary">
               <span>💾</span> Save Casting
             </button>
-            <button id="btnRefreshVoices" class="btn btn-secondary">
-              <span>🔄</span> Refresh Bank
+            <button id="btnRefreshVoices" class="btn btn-secondary" title="Reload Voice Bank from Disk">
+              <span>🔄</span>
             </button>
           </div>
         </div>
 
-        <div id="castCardsGrid" class="cast-grid">
-          <!-- Populated by JavaScript -->
+        <!-- Sub-Deck 1: Project Character Casting Grid -->
+        <div id="deckCharacterCasting" class="deck-view-pane active">
+          <div id="castCardsGrid" class="cast-grid">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+
+        <!-- Sub-Deck 2: Full Voice Bank Library Manager -->
+        <div id="deckVoiceLibrary" class="deck-view-pane hidden">
+          <div class="library-filter-bar glass-panel">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="inputVoiceSearch" class="studio-input" placeholder="Search voices by name, label, or character...">
+            </div>
+
+            <div class="filter-pills-row">
+              <div class="filter-group-pills" id="voiceCategoryFilters">
+                <span class="filter-pill-label">Category:</span>
+                <button class="filter-pill active" data-category="all">All</button>
+                <button class="filter-pill" data-category="Master Bank">Master Bank</button>
+                <button class="filter-pill" data-category="ElevenLabs Archive">ElevenLabs</button>
+                <button class="filter-pill" data-category="Custom">Custom</button>
+                <button class="filter-pill" data-category="Default / Root">Default</button>
+              </div>
+
+              <div class="filter-group-pills" id="voiceGenderFilters">
+                <span class="filter-pill-label">Gender:</span>
+                <button class="filter-pill active" data-gender="all">All</button>
+                <button class="filter-pill" data-gender="male">Male</button>
+                <button class="filter-pill" data-gender="female">Female</button>
+                <button class="filter-pill" data-gender="kid">Kid</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="voiceLibraryGrid" class="voice-library-grid">
+            <!-- Populated by JavaScript -->
+          </div>
         </div>
       </section>
 
@@ -549,6 +601,162 @@
           </div>
           <div class="pipeline-ctrl-right">
             <button id="btnDismissProgressModal" class="btn btn-secondary">Hide to Background</button>
+          </div>
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- UPLOAD VOICE SAMPLE MODAL                              -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <div id="modalUploadVoice" class="modal-overlay hidden">
+      <div class="modal-card voice-upload-card glass-panel">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>🎙️ Upload Voice Audio Sample</h3>
+            <p class="panel-desc">Add a high-quality clean reference audio clip (.wav, .mp3, .flac) to the Voice Bank.</p>
+          </div>
+          <button id="btnCloseUploadVoiceModal" class="btn-icon close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div id="voiceDropzone" class="file-dropzone">
+            <div class="dropzone-icon">🎵</div>
+            <div class="dropzone-text">
+              <strong>Drag & drop reference voice audio here</strong>
+              <span>Supports .WAV, .MP3, .FLAC, .M4A (5-30s recommended)</span>
+            </div>
+            <input type="file" id="inputVoiceFile" accept="audio/*,.wav,.mp3,.flac,.m4a" class="file-input-hidden">
+            <button type="button" id="btnBrowseVoiceFile" class="btn btn-secondary btn-sm">Browse Audio File</button>
+          </div>
+
+          <div id="uploadPreviewSection" class="upload-preview-section hidden">
+            <div class="preview-file-info">
+              <span class="preview-filename" id="uploadPreviewFilename">sample.wav</span>
+              <span class="preview-filesize" id="uploadPreviewFilesize">0 KB</span>
+            </div>
+            <audio id="audioUploadPreview" controls class="upload-preview-player"></audio>
+          </div>
+
+          <div class="form-grid-2col">
+            <div class="form-group">
+              <label for="inputUploadVoiceName">Character / Speaker Name *</label>
+              <input type="text" id="inputUploadVoiceName" class="studio-input" placeholder="e.g. Subaru, Megumin, Narrator Warm">
+            </div>
+
+            <div class="form-group">
+              <label for="selectUploadCategory">Bank Category</label>
+              <select id="selectUploadCategory" class="studio-select">
+                <option value="custom" selected>Custom Voice Clones (custom/)</option>
+                <option value="all_voices">Master Bank (all_voices/)</option>
+                <option value="elevenlabs">ElevenLabs Archive (elevenlabs/)</option>
+                <option value="root">Default Root (voice_bank/)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid-2col">
+            <div class="form-group">
+              <label for="selectUploadGender">Voice Gender</label>
+              <select id="selectUploadGender" class="studio-select">
+                <option value="unspecified">Unspecified / Auto</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="kid">Kid / Youth</option>
+                <option value="neutral">Neutral / Robot</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="inputUploadInstruct">Default Delivery / Emotion Prompt</label>
+              <input type="text" id="inputUploadInstruct" class="studio-input" placeholder="e.g. energetic young adult, expressive tone">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="inputUploadDescription">Voice Description / Notes</label>
+            <input type="text" id="inputUploadDescription" class="studio-input" placeholder="e.g. Clean Spanish anime dub clip harvested from Episode 4">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnCancelUploadVoice" class="btn btn-secondary">Cancel</button>
+          <button id="btnSubmitUploadVoice" class="btn btn-accent">
+            <span>🚀</span> Upload & Register Voice
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- CREATE / EDIT CHARACTER VOICE PROFILE MODAL            -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <div id="modalVoiceProfile" class="modal-overlay hidden">
+      <div class="modal-card voice-profile-card glass-panel">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3 id="profileModalTitle">👤 Edit Character Voice Profile</h3>
+            <p class="panel-desc">Configure TTS delivery parameters, guidance scale, and reference audio sample.</p>
+          </div>
+          <button id="btnCloseProfileModal" class="btn-icon close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-grid-2col">
+            <div class="form-group">
+              <label for="inputProfileName">Character Name *</label>
+              <input type="text" id="inputProfileName" class="studio-input" placeholder="e.g. Emilia">
+            </div>
+
+            <div class="form-group">
+              <label for="selectProfileGender">Gender</label>
+              <select id="selectProfileGender" class="studio-select">
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="kid">Kid</option>
+                <option value="neutral">Neutral</option>
+                <option value="unspecified">Unspecified</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="selectProfileRefAudio">Assigned Reference Audio Sample *</label>
+            <select id="selectProfileRefAudio" class="studio-select">
+              <!-- Populated by JavaScript -->
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="inputProfileInstruct">Instruct / Delivery Prompt (OmniVoice / CosyVoice)</label>
+            <input type="text" id="inputProfileInstruct" class="studio-input" placeholder="e.g. gentle, soft spoken, moderate pitch, calm and melodic">
+          </div>
+
+          <div class="form-grid-2col">
+            <div class="slider-group">
+              <label>Speech Speed: <span id="valProfileSpeed">1.0</span>x</label>
+              <input type="range" id="sliderProfileSpeed" min="0.7" max="1.5" step="0.05" value="1.0">
+            </div>
+
+            <div class="slider-group">
+              <label>Guidance Scale: <span id="valProfileGuidance">2.8</span></label>
+              <input type="range" id="sliderProfileGuidance" min="1.0" max="5.0" step="0.1" value="2.8">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="inputProfileDescription">Profile Notes / Description</label>
+            <input type="text" id="inputProfileDescription" class="studio-input" placeholder="Description of character traits and voice style...">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="modal-footer-left">
+            <button id="btnDeleteProfile" class="btn btn-danger hidden">
+              <span>🗑️</span> Delete Profile
+            </button>
+          </div>
+          <div class="modal-footer-right">
+            <button id="btnCancelProfile" class="btn btn-secondary">Cancel</button>
+            <button id="btnSubmitProfile" class="btn btn-accent">
+              <span>💾</span> Save Voice Profile
+            </button>
           </div>
         </div>
       </div>

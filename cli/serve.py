@@ -6,7 +6,7 @@ console = Console()
 def serve_api(
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind the server to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to listen on"),
-    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for development")
+    reload: bool = typer.Option(True, "--reload/--no-reload", help="Enable auto-reload for development")
 ):
     """
     Start the NovelCast Studio REST API server for Web and Desktop GUIs.

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import requests
@@ -56,6 +57,16 @@ class AssignVoiceRequest(BaseModel):
     voice_file: str
     gender: Optional[str] = "unspecified"
     instruct: Optional[str] = None
+
+class VoiceProfileRequest(BaseModel):
+    name: str
+    reference_audio: str
+    gender: Optional[str] = "unspecified"
+    instruct: Optional[str] = None
+    description: Optional[str] = None
+    speed: float = 1.0
+    guidance_scale: float = 2.8
+    pause_after_ms: int = 400
 
 class StitchRequest(BaseModel):
     project_id: str
@@ -436,8 +447,187 @@ def regenerate_single_segment(req: RegenerateSegmentRequest):
     raise HTTPException(status_code=500, detail="Failed to synthesize segment audio")
 
 # ─────────────────────────────────────────────────────────────
-# 4. Voice Bank Endpoints
+# 4. Voice Bank Endpoints & Management
 # ─────────────────────────────────────────────────────────────
+@app.get("/api/voice-bank/library")
+def get_voice_bank_library():
+    """Returns the full catalog of audio samples and character voice profiles in the Voice Bank."""
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    vb.auto_discover_voices()
+    
+    chars = vb.list_characters()
+    samples = []
+    
+    if os.path.exists("voice_bank"):
+        for root, _, files in os.walk("voice_bank"):
+            for f in sorted(files):
+                if f.endswith((".wav", ".mp3", ".flac", ".m4a")):
+                    rel_path = os.path.relpath(os.path.join(root, f), "voice_bank")
+                    full_path = os.path.join(root, f)
+                    
+                    # Category tag from directory
+                    rel_dir = os.path.dirname(rel_path)
+                    if not rel_dir or rel_dir == ".":
+                        category = "Default / Root"
+                    elif "elevenlabs" in rel_dir:
+                        category = "ElevenLabs Archive"
+                    elif "all_voices" in rel_dir:
+                        category = "Master Bank"
+                    else:
+                        category = rel_dir.replace("_", " ").title()
+
+                    # Find characters using this reference audio
+                    assigned_chars = []
+                    for c_name, c_prof in chars.items():
+                        if c_prof.reference_audio:
+                            c_ref = c_prof.reference_audio
+                            if c_ref == rel_path or c_ref.endswith(rel_path) or os.path.basename(c_ref) == f:
+                                assigned_chars.append(c_name)
+
+                    samples.append({
+                        "name": rel_path,
+                        "filename": f,
+                        "label": os.path.splitext(f)[0].replace("_", " ").title(),
+                        "category": category,
+                        "audio_url": f"/api/audio/sample?name={rel_path}",
+                        "size_kb": int(os.path.getsize(full_path) / 1024),
+                        "assigned_characters": assigned_chars
+                    })
+
+    return {
+        "characters": {k: v.model_dump() for k, v in chars.items()},
+        "samples": samples,
+        "total_samples": len(samples),
+        "default_narrator": vb.config.default_narrator or "Narrador"
+    }
+
+@app.post("/api/voice-bank/upload")
+async def upload_voice_sample(
+    file: UploadFile = File(...),
+    voice_name: str = Form(""),
+    category: str = Form("custom"),
+    gender: str = Form("unspecified"),
+    instruct: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    speed: float = Form(1.0),
+    guidance_scale: float = Form(2.8)
+):
+    """Uploads a new audio voice sample and registers it in the Voice Bank and voice_config.json."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".wav", ".mp3", ".flac", ".m4a"]:
+        raise HTTPException(status_code=400, detail="Invalid audio file extension. Must be .wav, .mp3, .flac, or .m4a")
+
+    # Determine target directory
+    safe_cat = re.sub(r'[^a-zA-Z0-9_\-]', '', category.strip()) if category != "root" else ""
+    target_dir = os.path.join("voice_bank", safe_cat) if safe_cat else "voice_bank"
+    os.makedirs(target_dir, exist_ok=True)
+
+    # Clean filename
+    clean_base = re.sub(r'[^a-zA-Z0-9_\-]', '_', os.path.splitext(file.filename)[0]).strip('_').lower()
+    clean_filename = f"{clean_base}{ext}"
+    target_path = os.path.join(target_dir, clean_filename)
+
+    # Write file
+    content = await file.read()
+    with open(target_path, "wb") as f:
+        f.write(content)
+
+    rel_path = os.path.relpath(target_path, "voice_bank")
+
+    # Register in VoiceBank config
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    char_key = voice_name.strip() if voice_name.strip() else clean_base.replace("_", " ").title()
+    
+    vb.config.characters[char_key] = CharacterVoice(
+        gender=gender,
+        instruct=instruct,
+        description=description or f"Custom uploaded voice sample: {clean_filename}",
+        speed=speed,
+        guidance_scale=guidance_scale,
+        reference_audio=f"voice_bank/{rel_path}"
+    )
+    vb.save()
+
+    return {
+        "success": True,
+        "character": char_key,
+        "sample_path": rel_path,
+        "audio_url": f"/api/audio/sample?name={rel_path}"
+    }
+
+@app.post("/api/voice-bank/profile")
+def save_voice_profile(req: VoiceProfileRequest):
+    """Creates or updates a character voice profile in voice_config.json."""
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    char_key = req.name.strip()
+    
+    ref_path = req.reference_audio
+    if not ref_path.startswith("voice_bank/") and os.path.exists(os.path.join("voice_bank", ref_path)):
+        ref_path = f"voice_bank/{ref_path}"
+
+    vb.config.characters[char_key] = CharacterVoice(
+        gender=req.gender or "unspecified",
+        instruct=req.instruct,
+        description=req.description or f"Voice profile for {char_key}",
+        speed=req.speed,
+        guidance_scale=req.guidance_scale,
+        pause_after_ms=req.pause_after_ms,
+        reference_audio=ref_path
+    )
+    vb.save()
+    return {"success": True, "character": char_key, "profile": vb.config.characters[char_key].model_dump()}
+
+@app.delete("/api/voice-bank/samples")
+def delete_voice_sample(name: str = Query(...)):
+    """Deletes an audio sample file from voice_bank and unbinds matching character profiles."""
+    safe_rel = os.path.normpath(name).lstrip("/\\")
+    if ".." in safe_rel:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    
+    full_path = os.path.join("voice_bank", safe_rel)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail=f"Voice sample '{safe_rel}' not found")
+    
+    try:
+        os.remove(full_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+
+    # Update VoiceBank config
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    unbound_chars = []
+    for c_name, c_prof in list(vb.config.characters.items()):
+        if c_prof.reference_audio:
+            if c_prof.reference_audio.endswith(safe_rel) or os.path.basename(c_prof.reference_audio) == os.path.basename(safe_rel):
+                c_prof.reference_audio = None
+                unbound_chars.append(c_name)
+    vb.save()
+
+    return {"success": True, "deleted_sample": safe_rel, "unbound_characters": unbound_chars}
+
+@app.delete("/api/voice-bank/profiles/{character_name}")
+def delete_voice_profile(character_name: str):
+    """Deletes a character voice profile from voice_config.json."""
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    if character_name not in vb.config.characters:
+        # Check case-insensitive
+        match = None
+        for k in vb.config.characters:
+            if k.lower() == character_name.lower():
+                match = k
+                break
+        if match:
+            character_name = match
+        else:
+            raise HTTPException(status_code=404, detail=f"Character profile '{character_name}' not found")
+
+    del vb.config.characters[character_name]
+    vb.save()
+    return {"success": True, "deleted_character": character_name}
+
 @app.get("/api/voices")
 def get_voices():
     """Lists registered character voices and audio samples."""
