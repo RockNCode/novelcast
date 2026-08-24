@@ -160,15 +160,21 @@ class OmniVoiceEngine(BaseTTSEngine):
         script: ChapterScript,
         voice_bank: VoiceBank,
         language: str = "es",
-        progress_callback: Optional[Callable[[int, int, Segment, bool, bool], None]] = None
+        progress_callback: Optional[Callable[[int, int, Segment, bool, bool], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+        is_paused: Optional[Callable[[], bool]] = None
     ) -> List[str]:
-        """Concurrent multi-worker batch synthesis for OmniVoice."""
+        """Concurrent multi-worker batch synthesis for OmniVoice with active pause and cancellation."""
+        import time
         total = len(script.segments)
         audio_files = [None] * total
         tasks = []
 
         # First pass: check cached items
         for idx, seg in enumerate(script.segments):
+            if is_cancelled and is_cancelled():
+                return audio_files
+
             cache_file = self.get_cache_path(seg, language=language)
             if self.is_cached(seg, language=language):
                 audio_files[idx] = cache_file
@@ -177,24 +183,47 @@ class OmniVoiceEngine(BaseTTSEngine):
             else:
                 tasks.append((idx, seg, cache_file))
 
-        if not tasks:
+        if not tasks or (is_cancelled and is_cancelled()):
             return audio_files
 
-        # Second pass: synthesize missing chunks concurrently
+        # Second pass: synthesize missing chunks concurrently with active pause/cancel checking
         def worker(idx_seg_cache):
             i, s, path = idx_seg_cache
+            if is_cancelled and is_cancelled():
+                return i, s, path, False
+            while is_paused and is_paused():
+                time.sleep(0.25)
+                if is_cancelled and is_cancelled():
+                    return i, s, path, False
+
+            if is_cancelled and is_cancelled():
+                return i, s, path, False
+
             success = self.synthesize_chunk(s, voice_bank, path)
             return i, s, path, success
 
-        # In local mode on single GPU, workers can be 1 or 2 depending on VRAM
         max_workers = self.workers if self.remote_url else min(self.workers, 2)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_task = {executor.submit(worker, t): t for t in tasks}
+            future_to_task = {}
+            for t in tasks:
+                if is_cancelled and is_cancelled():
+                    break
+                future = executor.submit(worker, t)
+                future_to_task[future] = t
+
             for future in as_completed(future_to_task):
-                idx, seg, cache_file, success = future.result()
-                if success and os.path.exists(cache_file):
-                    audio_files[idx] = cache_file
-                if progress_callback:
-                    progress_callback(idx + 1, total, seg, False, success)
+                if is_cancelled and is_cancelled():
+                    for f in future_to_task:
+                        f.cancel()
+                    break
+
+                try:
+                    idx, seg, cache_file, success = future.result()
+                    if success and os.path.exists(cache_file):
+                        audio_files[idx] = cache_file
+                    if progress_callback and not (is_cancelled and is_cancelled()):
+                        progress_callback(idx + 1, total, seg, False, success)
+                except Exception:
+                    pass
 
         return audio_files

@@ -670,27 +670,23 @@ def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
         job["current_item"] = 0
 
         processed_so_far = 0
+        def check_cancelled() -> bool:
+            return bool(job.get("cancel_requested", False))
+
+        def check_paused() -> bool:
+            return bool(job.get("pause_requested", False))
+
         for cs in all_scripts:
-            if job.get("cancel_requested"):
+            if check_cancelled():
                 job["status"] = "stopped"
                 job["logs"].append("🛑 Pipeline stopped by user.")
                 return
 
             def on_progress(cur, tot, seg, is_cached, success):
                 nonlocal processed_so_far
-                if job.get("cancel_requested"):
+                if check_cancelled():
                     job["status"] = "stopped"
                     return
-
-                while job.get("pause_requested"):
-                    job["status"] = "paused"
-                    time.sleep(0.5)
-                    if job.get("cancel_requested"):
-                        job["status"] = "stopped"
-                        return
-
-                if job["status"] == "paused":
-                    job["status"] = "running"
 
                 processed_so_far += 1
                 job["current_item"] = processed_so_far
@@ -701,9 +697,14 @@ def _run_pipeline_worker(job_id: str, req: RunPipelineRequest):
                 if processed_so_far % 10 == 0 or processed_so_far == total_segments_count:
                     job["logs"].append(f"[{job['progress_pct']}%] Segment {processed_so_far}/{total_segments_count} ({seg.speaker}: {seg.text[:30]}...) [{status_str}]")
 
-            engine.batch_synthesize(cs, vb, language="es", progress_callback=on_progress)
+            engine.batch_synthesize(
+                cs, vb, language="es",
+                progress_callback=on_progress,
+                is_cancelled=check_cancelled,
+                is_paused=check_paused
+            )
 
-            if job.get("cancel_requested"):
+            if check_cancelled():
                 job["status"] = "stopped"
                 job["logs"].append("🛑 Pipeline stopped by user.")
                 return

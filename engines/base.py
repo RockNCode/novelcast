@@ -33,29 +33,43 @@ class BaseTTSEngine(ABC):
         script: ChapterScript,
         voice_bank: VoiceBank,
         language: str = "es",
-        progress_callback: Optional[Callable[[int, int, Segment, bool], None]] = None
+        progress_callback: Optional[Callable[[int, int, Segment, bool, bool], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+        is_paused: Optional[Callable[[], bool]] = None
     ) -> List[str]:
         """
-        Synthesizes all segments in a script with caching and progress reporting.
+        Synthesizes all segments in a script with caching, pause, cancellation, and progress reporting.
         Returns list of generated/cached audio filepaths in order.
         """
+        import time
         audio_files = []
         total = len(script.segments)
 
         for idx, seg in enumerate(script.segments):
+            if is_cancelled and is_cancelled():
+                break
+
+            while is_paused and is_paused():
+                time.sleep(0.25)
+                if is_cancelled and is_cancelled():
+                    break
+
+            if is_cancelled and is_cancelled():
+                break
+
             cache_file = self.get_cache_path(seg, language=language)
             was_cached = self.is_cached(seg, language=language)
 
             if not was_cached:
                 success = self.synthesize_chunk(seg, voice_bank, cache_file)
-                if not success:
+                if not success and not (is_cancelled and is_cancelled()):
                     # Retry once
                     success = self.synthesize_chunk(seg, voice_bank, cache_file)
             else:
                 success = True
 
             if progress_callback:
-                progress_callback(idx + 1, total, seg, was_cached)
+                progress_callback(idx + 1, total, seg, was_cached, success)
 
             if success and os.path.exists(cache_file):
                 audio_files.append(cache_file)
