@@ -43,31 +43,20 @@ class CharacterDetector:
                 if seg.instruct:
                     speaker_emotions[f"{spk}::{seg.instruct}"] += 1
 
-        # Build available voices list from voice bank
+        # Build available voices list recursively from voice bank
         available_voices = []
         if os.path.exists(self.vb.voice_bank_dir):
-            for f in sorted(os.listdir(self.vb.voice_bank_dir)):
-                if f.endswith((".wav", ".mp3", ".flac", ".m4a")):
-                    base = os.path.splitext(f)[0]
-                    available_voices.append({
-                        "filename": f,
-                        "name": base.replace("_", " ").title(),
-                        "path": os.path.join(self.vb.voice_bank_dir, f),
-                        "audio_url": f"/api/audio/sample?name={f}"
-                    })
-
-        # Scan all_voices subfolder if present
-        all_voices_dir = os.path.join(self.vb.voice_bank_dir, "all_voices")
-        if os.path.exists(all_voices_dir):
-            for f in sorted(os.listdir(all_voices_dir)):
-                if f.endswith((".wav", ".mp3", ".flac", ".m4a")):
-                    base = os.path.splitext(f)[0]
-                    available_voices.append({
-                        "filename": f"all_voices/{f}",
-                        "name": base.replace("_", " ").title(),
-                        "path": os.path.join(all_voices_dir, f),
-                        "audio_url": f"/api/audio/sample?name={f}"
-                    })
+            for root, _, files in os.walk(self.vb.voice_bank_dir):
+                for f in sorted(files):
+                    if f.endswith((".wav", ".mp3", ".flac", ".m4a")):
+                        rel_path = os.path.relpath(os.path.join(root, f), self.vb.voice_bank_dir)
+                        base = os.path.splitext(f)[0]
+                        available_voices.append({
+                            "filename": rel_path,
+                            "name": base.replace("_", " ").title(),
+                            "path": os.path.join(root, f),
+                            "audio_url": f"/api/audio/sample?name={rel_path}"
+                        })
 
         detected_list = []
         # Sort characters by frequency (Narrador always first, then by line count)
@@ -81,7 +70,16 @@ class CharacterDetector:
             char_info = self.vb.get_character(spk)
             assigned_file = None
             if char_info and char_info.reference_audio:
-                assigned_file = os.path.basename(char_info.reference_audio)
+                ref = char_info.reference_audio
+                if os.path.isabs(ref):
+                    if ref.startswith(os.path.abspath(self.vb.voice_bank_dir)):
+                        assigned_file = os.path.relpath(ref, self.vb.voice_bank_dir)
+                    else:
+                        assigned_file = os.path.basename(ref)
+                elif ref.startswith("voice_bank/"):
+                    assigned_file = ref[len("voice_bank/"):]
+                else:
+                    assigned_file = ref
 
             # Auto-find best candidate in available voices
             suggested_file = assigned_file
@@ -90,14 +88,14 @@ class CharacterDetector:
                 for v in available_voices:
                     v_base = os.path.splitext(os.path.basename(v["filename"]))[0].lower()
                     if v_base == clean_spk or clean_spk in v_base or v_base in clean_spk:
-                        suggested_file = os.path.basename(v["filename"])
+                        suggested_file = v["filename"]
                         break
 
             # If still none and narrator, fallback to narrador.wav
-            if not suggested_file and spk == "Narrador":
+            if not suggested_file and spk.lower() in ["narrador", "narrator"]:
                 for v in available_voices:
                     if "narrador" in v["filename"].lower() or "narrator" in v["filename"].lower():
-                        suggested_file = os.path.basename(v["filename"])
+                        suggested_file = v["filename"]
                         break
 
             detected_list.append({

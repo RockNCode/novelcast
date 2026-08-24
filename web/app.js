@@ -1057,14 +1057,38 @@ class NovelCastStudio {
   renderDetectedCharacters(characters) {
     this.castCardsGrid.innerHTML = '';
     
-    const sampleOptions = this.state.availableSamples.map(s => {
-      return `<option value="${s.name}">${s.name} (${s.label})</option>`;
-    }).join('');
+    const sampleOptions = [
+      `<option value="">-- Select a Voice Sample --</option>`,
+      ...this.state.availableSamples.map(s => `<option value="${s.name}">${s.name} (${s.label})</option>`)
+    ].join('');
 
     characters.forEach(char => {
       const cLower = char.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const assigned = char.assigned_voice || char.suggested_voice || 'narrador.wav';
+      const assigned = char.assigned_voice || char.suggested_voice || '';
       const pctText = char.pct_of_dialogue ? ` • ${char.pct_of_dialogue}% of dialogue` : '';
+
+      // Match against availableSamples
+      let matchedValue = '';
+      if (assigned) {
+        const exact = this.state.availableSamples.find(s => s.name === assigned);
+        if (exact) {
+          matchedValue = exact.name;
+        } else {
+          const baseName = assigned.split('/').pop().toLowerCase();
+          const match = this.state.availableSamples.find(s => {
+            const sBase = s.name.split('/').pop().toLowerCase();
+            return sBase === baseName || s.name.toLowerCase().endsWith('/' + baseName);
+          });
+          if (match) {
+            matchedValue = match.name;
+          }
+        }
+      }
+
+      if (!matchedValue && char.name.toLowerCase() === 'narrador') {
+        const narr = this.state.availableSamples.find(s => s.name.toLowerCase().includes('narrador'));
+        if (narr) matchedValue = narr.name;
+      }
 
       const card = document.createElement('div');
       card.className = 'cast-card';
@@ -1092,20 +1116,25 @@ class NovelCastStudio {
           <button class="btn-icon btn-audition-sample" title="Audition Reference Voice">
             ▶
           </button>
-          <span class="sample-name">${assigned}</span>
+          <span class="sample-name">${matchedValue || 'None assigned'}</span>
         </div>
       `;
 
       const select = card.querySelector('.cast-sample-select');
-      select.value = assigned;
+      select.value = matchedValue;
 
       const sampleNameSpan = card.querySelector('.sample-name');
       select.addEventListener('change', (e) => {
-        sampleNameSpan.textContent = e.target.value;
+        sampleNameSpan.textContent = e.target.value || 'None assigned';
       });
 
       const btnAudition = card.querySelector('.btn-audition-sample');
       btnAudition.addEventListener('click', () => {
+        if (!select.value) {
+          alert('Please select a reference voice sample to audition.');
+          return;
+        }
+
         this.state.playbackMode = 'sample';
         this.state.activeLineIndex = -1;
         document.querySelectorAll('.script-row').forEach(r => r.classList.remove('active-playing'));
@@ -1129,7 +1158,9 @@ class NovelCastStudio {
       const assignments = {};
       document.querySelectorAll('.cast-sample-select').forEach(sel => {
         const charName = sel.getAttribute('data-char');
-        assignments[charName] = sel.value;
+        if (sel.value) {
+          assignments[charName] = sel.value;
+        }
       });
 
       const resp = await fetch(`/api/projects/${this.state.activeProject}/cast_all`, {
@@ -1141,6 +1172,7 @@ class NovelCastStudio {
       const data = await resp.json();
       this.btnSaveVoiceCasting.innerHTML = '<span>💾</span> Save Casting';
       if (data.success) {
+        await this.detectProjectCharacters();
         alert(`✓ Voice casting updated for ${data.updated_characters} character(s)!`);
       }
     } catch (e) {

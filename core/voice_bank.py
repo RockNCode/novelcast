@@ -12,10 +12,20 @@ class VoiceBank:
 
     def _find_ref_audio(self, name: str) -> Optional[str]:
         clean = name.lower().replace(" ", "_")
+        if not os.path.exists(self.voice_bank_dir):
+            return None
+
+        # Check top-level first
         for ext in [".wav", ".mp3", ".flac", ".m4a"]:
             path = os.path.join(self.voice_bank_dir, f"{clean}{ext}")
             if os.path.exists(path):
                 return path
+
+        # Check recursively in subdirectories (all_voices, elevenlabs, etc.)
+        for root, _, files in os.walk(self.voice_bank_dir):
+            for f in files:
+                if f.lower().startswith(clean) and f.endswith((".wav", ".mp3", ".flac", ".m4a")):
+                    return os.path.join(root, f)
         return None
 
     def load(self):
@@ -41,13 +51,22 @@ class VoiceBank:
             json.dump(self.config.model_dump(), f, ensure_ascii=False, indent=2)
 
     def get_character(self, name: str) -> CharacterVoice:
+        # 1. Exact match
         if name in self.config.characters:
             char = self.config.characters[name]
             if not char.reference_audio:
                 char.reference_audio = self._find_ref_audio(name)
             return char
         
-        # Return fallback with auto-detected reference audio if it exists
+        # 2. Case-insensitive / normalized match
+        n_clean = name.strip().lower().replace("_", " ")
+        for k, v in self.config.characters.items():
+            if k.strip().lower().replace("_", " ") == n_clean:
+                if not v.reference_audio:
+                    v.reference_audio = self._find_ref_audio(name)
+                return v
+
+        # 3. Fallback auto-discovery
         ref = self._find_ref_audio(name)
         return CharacterVoice(
             description=f"Auto-cast character: {name}",
@@ -58,15 +77,16 @@ class VoiceBank:
     def auto_discover_voices(self):
         """Scans voice_bank_dir and registers any discovered audio files."""
         if os.path.exists(self.voice_bank_dir):
-            for fname in os.listdir(self.voice_bank_dir):
-                name, ext = os.path.splitext(fname)
-                if ext.lower() in [".wav", ".mp3", ".flac", ".m4a"]:
-                    char_name = name.capitalize().replace("_", " ")
-                    if char_name not in self.config.characters:
-                        self.config.characters[char_name] = CharacterVoice(
-                            description=f"Discovered voice: {char_name}",
-                            reference_audio=os.path.join(self.voice_bank_dir, fname)
-                        )
+            for root, _, files in os.walk(self.voice_bank_dir):
+                for fname in sorted(files):
+                    name, ext = os.path.splitext(fname)
+                    if ext.lower() in [".wav", ".mp3", ".flac", ".m4a"]:
+                        char_name = name.replace("_", " ").title()
+                        if char_name not in self.config.characters and not any(k.lower() == char_name.lower() for k in self.config.characters):
+                            self.config.characters[char_name] = CharacterVoice(
+                                description=f"Discovered voice: {char_name}",
+                                reference_audio=os.path.join(root, fname)
+                            )
 
     def add_character(self, name: str, voice: CharacterVoice):
         if not voice.reference_audio:
@@ -75,16 +95,4 @@ class VoiceBank:
         self.save()
 
     def list_characters(self) -> Dict[str, CharacterVoice]:
-        # Also auto-populate any characters present in voice_bank directory
-        result = dict(self.config.characters)
-        if os.path.exists(self.voice_bank_dir):
-            for f in os.listdir(self.voice_bank_dir):
-                if f.endswith((".wav", ".mp3")):
-                    base = os.path.splitext(f)[0]
-                    cap_name = base.replace("_", " ").title()
-                    if cap_name not in result and base not in result:
-                        result[cap_name] = CharacterVoice(
-                            description=f"Discovered from {f}",
-                            reference_audio=os.path.join(self.voice_bank_dir, f)
-                        )
-        return result
+        return dict(self.config.characters)

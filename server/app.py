@@ -544,11 +544,11 @@ def batch_cast_characters(project_id: str, req: BatchCastRequest):
     for char_name, voice_file in req.assignments.items():
         if not voice_file:
             continue
-        char_key = char_name.title()
+        char_key = char_name.strip()
         ref_path = os.path.join("voice_bank", voice_file)
         
         existing = vb.get_character(char_key)
-        gender = existing.gender if existing else ("male" if char_name in ["Narrador", "Subaru", "Roswaal"] else "female")
+        gender = existing.gender if existing else ("male" if char_name.lower() in ["narrador", "subaru", "roswaal", "reinhard"] else "female")
         instruct = existing.instruct if existing else None
         
         vb.config.characters[char_key] = CharacterVoice(
