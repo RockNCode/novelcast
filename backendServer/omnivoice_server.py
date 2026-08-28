@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
             gpu_name = torch.cuda.get_device_name(i)
             dev_str = f"cuda:{i}"
             print(f"Loading OmniVoice onto GPU {i}: {gpu_name} ({dev_str})...")
-            model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device=dev_str, asr_device=dev_str)
+            model = OmniVoice.from_pretrained("k2-fsa/OmniVoice").to(dev_str)
             print(f"Pre-warming Whisper ASR pipeline on {dev_str}...")
             try:
                 model.load_asr_model(device=dev_str)
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
             print(f"✓ GPU {i} Ready!")
     else:
         print("Loading OmniVoice on CPU...")
-        model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device="cpu", asr_device="cpu")
+        model = OmniVoice.from_pretrained("k2-fsa/OmniVoice").to("cpu")
         try:
             model.load_asr_model(device="cpu")
         except Exception:
