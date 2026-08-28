@@ -23,7 +23,7 @@ class Segment(BaseModel):
 class ChapterScript(BaseModel):
     title: str
     book: str = "NovelCast Audiobook"
-    chapter_id: str
+    chapter_id: str = "chapter"
     segments: List[Segment] = Field(default_factory=list)
 
     @property

@@ -2387,6 +2387,19 @@ class NovelCastStudio {
           body: JSON.stringify(payload)
         });
 
+        if (!resp.ok) {
+          const errText = await resp.text();
+          let errDetail = errText;
+          try {
+            const errJson = JSON.parse(errText);
+            errDetail = errJson.detail || errJson.message || errText;
+          } catch (_) {}
+          this.btnSubmitAIFix.disabled = false;
+          this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
+          this.aiFixStatusText.textContent = `Error (${resp.status}): ${errDetail}`;
+          return;
+        }
+
         const data = await resp.json();
         this.btnSubmitAIFix.disabled = false;
         this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';

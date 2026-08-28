@@ -1274,6 +1274,8 @@ def direct_chapter_script_api(
 
     with open(fpath, "r", encoding="utf-8") as f:
         data = json.load(f)
+    if isinstance(data, dict) and "chapter_id" not in data:
+        data["chapter_id"] = os.path.splitext(chapter_file)[0]
     script = ChapterScript(**data)
 
     vb = VoiceBank(voice_bank_dir="voice_bank")
@@ -1358,6 +1360,8 @@ def direct_all_chapters_api(
                 fpath = os.path.join(scripts_dir, jf)
                 with open(fpath, "r", encoding="utf-8") as fp:
                     data = json.load(fp)
+                if isinstance(data, dict) and "chapter_id" not in data:
+                    data["chapter_id"] = os.path.splitext(jf)[0]
                 script = ChapterScript(**data)
 
                 tasks_status[job_id]["step"] = f"Directing Chapter {idx + 1}/{total_chaps}: {script.title}"
