@@ -9,6 +9,7 @@ from novelcast.cli.package import package_audiobook
 from novelcast.cli.run import run_pipeline
 from novelcast.cli.serve import serve_api
 from novelcast.cli.dub import dub_audiobook
+from novelcast.cli.direct import direct_script
 
 console = Console()
 
@@ -23,6 +24,7 @@ app = typer.Typer(
 app.command("init", help="Initialize a new NovelCast audiobook project workspace")(init_project)
 app.command("parse", help="Extract and segment eBook dialogue and narration into chapter scripts")(parse_book)
 app.add_typer(voices_app, name="voices")
+app.command("direct", help="Direct and auto-fix dialogue speakers and emotions with local/cloud LLMs")(direct_script)
 app.command("generate", help="Synthesize speech audio chunks with multi-worker GPU acceleration and caching")(generate_script)
 app.command("stitch", help="Stitch audio chunks into continuous chapter tracks with smart pause timing")(stitch_script)
 app.command("package", help="Package stitched chapters into a master M4B audiobook with chapters and cover art")(package_audiobook)

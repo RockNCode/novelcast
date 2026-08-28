@@ -82,6 +82,9 @@
           <button class="nav-tab" data-tab="dubbingStudio">
             <span class="tab-icon">🌐</span> Dubbing
           </button>
+          <button class="nav-tab" data-tab="settingsStudio">
+            <span class="tab-icon">⚙️</span> Settings & LLM
+          </button>
         </nav>
       </div>
     </header>
@@ -113,6 +116,9 @@
           </div>
 
           <div class="right-actions">
+            <button id="btnOpenAIFixModal" class="btn btn-secondary btn-ai-direct" title="Auto-detect correct dialogue speakers, emotions, and expressive tokens with AI">
+              <span>🤖</span> AI Fix Dialogue
+            </button>
             <button id="btnSaveScript" class="btn btn-secondary">
               <span>💾</span> Save Edits
             </button>
@@ -368,6 +374,91 @@
               <pre id="dubLogs" class="dub-terminal-log">Starting NovelCast Dub Pipeline...</pre>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════ -->
+      <!-- TAB 5: SETTINGS & LLM ENGINE CONFIGURATION             -->
+      <!-- ══════════════════════════════════════════════════════ -->
+      <section id="tabSettingsStudio" class="tab-panel">
+        <div class="settings-layout">
+          
+          <!-- Left: Provider Selector -->
+          <div class="settings-sidebar glass-panel">
+            <div class="settings-sidebar-header">
+              <h3>🤖 LLM Providers</h3>
+              <p class="panel-desc">Configure local or cloud AI models for automatic dialogue speaker detection & emotion directing.</p>
+            </div>
+
+            <div id="llmProviderList" class="provider-nav-list">
+              <!-- Rendered dynamically by JavaScript -->
+            </div>
+
+            <div class="active-provider-summary glass-panel">
+              <span class="summary-label">Active Default Engine:</span>
+              <strong id="labelActiveLLM">Ollama (qwen2.5:7b)</strong>
+              <div id="badgeActiveLLMStatus" class="status-pill info">Checking status...</div>
+            </div>
+          </div>
+
+          <!-- Right: Provider Configuration Form -->
+          <div class="settings-content glass-panel">
+            <div class="settings-header-row">
+              <div>
+                <h3 id="currentProviderTitle">Ollama (Local Inference)</h3>
+                <p id="currentProviderDesc" class="panel-desc">Fast local private inference with Ollama on Mac/Linux/Windows.</p>
+              </div>
+              <button id="btnSetAsDefaultProvider" class="btn btn-accent btn-sm">
+                <span>⭐</span> Set as Active LLM
+              </button>
+            </div>
+
+            <div class="form-grid-2col">
+              <div class="form-group">
+                <label for="inputLLMAPIBase">API Base URL *</label>
+                <input type="text" id="inputLLMAPIBase" class="studio-input" placeholder="e.g. http://localhost:11434/v1">
+                <small class="field-hint">Must support standard OpenAI-compatible <code>/chat/completions</code> endpoint.</small>
+              </div>
+
+              <div class="form-group">
+                <label for="inputLLMAPIKey">API Key (Optional for Local)</label>
+                <input type="password" id="inputLLMAPIKey" class="studio-input" placeholder="sk-... (Leave blank for local Ollama / LM Studio)">
+              </div>
+            </div>
+
+            <div class="form-grid-2col">
+              <div class="form-group">
+                <label for="selectLLMDefaultModel">Default Model Name</label>
+                <div class="input-with-custom-toggle">
+                  <select id="selectLLMDefaultModel" class="studio-select"></select>
+                  <input type="text" id="inputLLMCustomModel" class="studio-input hidden" placeholder="e.g. qwen2.5:14b, deepseek-chat">
+                </div>
+              </div>
+
+              <div class="slider-group">
+                <label>Creativity / Temperature: <span id="valLLMTemperature">0.2</span></label>
+                <input type="range" id="sliderLLMTemperature" min="0.0" max="1.0" step="0.05" value="0.2">
+                <small class="field-hint">Lower values (0.1 - 0.3) provide the most accurate and consistent JSON dialogue attribution.</small>
+              </div>
+            </div>
+
+            <div class="provider-test-bar">
+              <button id="btnTestLLMConnection" class="btn btn-secondary">
+                <span>⚡</span> Test Connection
+              </button>
+              <div id="testResultPill" class="test-result-box hidden">
+                <span id="testResultIcon">✓</span>
+                <span id="testResultMsg">Connected successfully</span>
+              </div>
+            </div>
+
+            <div class="settings-actions-footer">
+              <button id="btnSaveLLMConfig" class="btn btn-accent">
+                <span>💾</span> Save Provider Configuration
+              </button>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -762,6 +853,97 @@
               <span>💾</span> Save Voice Profile
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════ -->
+    <!-- AI FIX DIALOGUE & SPEAKERS MODAL                       -->
+    <!-- ══════════════════════════════════════════════════════ -->
+    <div id="modalAIFixDialogue" class="modal-overlay hidden">
+      <div class="modal-card ai-fix-modal-card glass-panel">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>🤖 AI Script Director: Fix Dialogue & Speakers</h3>
+            <p class="panel-desc">Uses contextual literary AI to automatically attribute speakers, add emotional instruct prompts, and expressive tokens.</p>
+          </div>
+          <button id="btnCloseAIFixModal" class="btn-icon close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Step 1: Model & Scope Configuration -->
+          <div class="form-grid-2col">
+            <div class="form-group">
+              <label for="selectAIFixProvider">Choose LLM Engine:</label>
+              <select id="selectAIFixProvider" class="studio-select"></select>
+            </div>
+
+            <div class="form-group">
+              <label for="selectAIFixModel">Model Name:</label>
+              <select id="selectAIFixModel" class="studio-select"></select>
+            </div>
+          </div>
+
+          <div class="form-group ai-scope-group">
+            <label>Directing Scope:</label>
+            <div class="radio-pill-group">
+              <label class="radio-pill-label">
+                <input type="radio" name="aiFixScope" value="chapter" checked>
+                <span>📖 Current Chapter (<span id="aiFixCurrentChapterName">Chapter</span>)</span>
+              </label>
+              <label class="radio-pill-label">
+                <input type="radio" name="aiFixScope" value="all">
+                <span>📚 All Chapters in Book</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Feature Toggles -->
+          <div class="ai-feature-toggles">
+            <label class="toggle-checkbox-row">
+              <input type="checkbox" id="chkAIFixSpeakers" checked>
+              <span><strong>Auto-Attribute Character Speakers</strong> <small>(resolves multi-turn dialogue, "Narrador", and characters)</small></span>
+            </label>
+
+            <label class="toggle-checkbox-row">
+              <input type="checkbox" id="chkAIFixInstructs" checked>
+              <span><strong>Add Emotional Delivery Prompts</strong> <small>(e.g. whisper, shouting, high pitch, crying)</small></span>
+            </label>
+
+            <label class="toggle-checkbox-row">
+              <input type="checkbox" id="chkAIFixTokens" checked>
+              <span><strong>Insert Vocal Tokens</strong> <small>(adds [laughter], [gasp], [sigh], [groan] into speech)</small></span>
+            </label>
+          </div>
+
+          <!-- Live Progress & Diff Feed -->
+          <div id="aiFixProgressSection" class="ai-progress-section hidden">
+            <div class="ai-progress-header">
+              <span id="aiFixStatusText">Directing chapter dialogue...</span>
+              <span id="aiFixProgressPct">0%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div id="aiFixProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+
+            <div class="ai-diff-feed-wrapper">
+              <div class="diff-feed-header">
+                <span>Live Attribution & Tone Corrections</span>
+                <span id="aiFixChangesCount" class="badge-count">0 corrections</span>
+              </div>
+              <div id="aiFixDiffList" class="ai-diff-container">
+                <div class="diff-placeholder">Click "Run AI Director" to begin...</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button id="btnCancelAIFix" class="btn btn-secondary">Close</button>
+          <button id="btnSubmitAIFix" class="btn btn-accent">
+            <span>🚀</span> Run AI Script Director
+          </button>
         </div>
       </div>
     </div>

@@ -13,6 +13,8 @@ from pydantic import BaseModel
 
 from novelcast.core.schema import Segment, ChapterScript, CharacterVoice
 from novelcast.core.voice_bank import VoiceBank
+from novelcast.core.llm_manager import LLMConfigManager, LLMProviderConfig
+from novelcast.core.ai_director import AIDirector
 from novelcast.engines import get_engine
 from novelcast.core.stitcher import AudioStitcher
 from novelcast.core.packager import AudiobookPackager
@@ -80,6 +82,28 @@ class PackageM4BRequest(BaseModel):
     author: str = "Tappei Nagatsuki"
     cover_image: Optional[str] = None
     bitrate: str = "128k"
+
+class LLMUpdateConfigRequest(BaseModel):
+    active_provider: Optional[str] = None
+    active_model: Optional[str] = None
+    provider_id: Optional[str] = None
+    api_base: Optional[str] = None
+    api_key: Optional[str] = None
+    default_model: Optional[str] = None
+    models: Optional[List[str]] = None
+    temperature: Optional[float] = None
+
+class LLMTestRequest(BaseModel):
+    provider_id: str
+    model: Optional[str] = None
+
+class AIDirectRequest(BaseModel):
+    provider_id: Optional[str] = None
+    model: Optional[str] = None
+    batch_size: int = 25
+    refine_speakers: bool = True
+    refine_instructs: bool = True
+    insert_audio_tokens: bool = True
 
 # ─────────────────────────────────────────────────────────────
 # Helper Utilities & Project Registry
@@ -1199,8 +1223,174 @@ def download_file(path: str = Query(...)):
     return FileResponse(path, filename=filename, media_type="application/octet-stream")
 
 # ─────────────────────────────────────────────────────────────
-# 7. Static Web Frontend Mount
+# 6. LLM & AI Script Director Endpoints
 # ─────────────────────────────────────────────────────────────
+@app.get("/api/llm/config")
+def get_llm_config():
+    """Returns current LLM global configuration and available providers."""
+    mgr = LLMConfigManager()
+    return mgr.config.model_dump()
+
+@app.post("/api/llm/config")
+def update_llm_config(req: LLMUpdateConfigRequest):
+    """Updates active LLM provider or edits a specific provider configuration."""
+    mgr = LLMConfigManager()
+    if req.active_provider:
+        mgr.set_active(req.active_provider, req.active_model)
+    if req.provider_id:
+        mgr.update_provider(
+            provider_id=req.provider_id,
+            api_base=req.api_base,
+            api_key=req.api_key,
+            default_model=req.default_model,
+            models=req.models,
+            temperature=req.temperature
+        )
+    return {"success": True, "config": mgr.config.model_dump()}
+
+@app.post("/api/llm/test")
+def test_llm_connection(req: LLTestRequest if 'LLTestRequest' in globals() else LLMTestRequest):
+    """Tests connectivity to a local or cloud LLM endpoint."""
+    mgr = LLMConfigManager()
+    result = mgr.test_connection(req.provider_id, model_override=req.model)
+    return result
+
+@app.post("/api/scripts/{project_id}/{chapter_file}/ai-fix")
+def direct_chapter_script_api(
+    project_id: str,
+    chapter_file: str,
+    req: AIDirectRequest
+):
+    """
+    Executes the AI Script Director on a single chapter script,
+    re-attributing speakers, emotion instruct prompts, and audio tokens.
+    """
+    pinfo = resolve_project_dir(project_id)
+    scripts_dir = pinfo["path"]
+    fpath = os.path.join(scripts_dir, chapter_file)
+
+    if not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail=f"Chapter script '{chapter_file}' not found")
+
+    with open(fpath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    script = ChapterScript(**data)
+
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    vb.auto_discover_voices()
+
+    mgr = LLMConfigManager()
+    prov_id = req.provider_id or mgr.config.active_provider
+    model_ovr = req.model or mgr.config.active_model
+
+    director = AIDirector(config_manager=mgr)
+    director.set_provider(prov_id, model_override=model_ovr)
+
+    # Collect candidate characters
+    from novelcast.core.character_detector import CharacterDetector
+    detector = CharacterDetector(voice_bank=vb)
+    detected = detector.detect_from_scripts([script])
+    candidate_chars = [
+        {"name": c["name"], "gender": c["gender"], "description": c.get("sample_quote", "")}
+        for c in detected
+    ]
+
+    updated_script, diffs = director.direct_chapter_script(
+        script=script,
+        candidate_characters=candidate_chars,
+        vb=vb,
+        batch_size=req.batch_size,
+        refine_speakers=req.refine_speakers,
+        refine_instructs=req.refine_instructs,
+        insert_audio_tokens=req.insert_audio_tokens
+    )
+
+    # Save to disk
+    with open(fpath, "w", encoding="utf-8") as f:
+        json.dump(updated_script.model_dump(), f, indent=2, ensure_ascii=False)
+
+    return {
+        "success": True,
+        "chapter_id": script.chapter_id,
+        "title": script.title,
+        "total_segments": len(script.segments),
+        "total_fixed": len(diffs),
+        "diffs": diffs,
+        "segments": [s.model_dump() for s in updated_script.segments]
+    }
+
+@app.post("/api/scripts/{project_id}/ai-fix-all")
+def direct_all_chapters_api(
+    project_id: str,
+    req: AIDirectRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Launches a background job to direct all chapters in the project.
+    """
+    job_id = f"job_aifix_{int(time.time())}"
+    tasks_status[job_id] = {
+        "id": job_id,
+        "type": "ai_fix_all",
+        "project_id": project_id,
+        "status": "running",
+        "progress": 0,
+        "step": "Starting AI Director for all chapters...",
+        "logs": [f"[{time.strftime('%H:%M:%S')}] Initializing AI Director job for {project_id}..."],
+        "total_fixed": 0
+    }
+
+    def run_job():
+        try:
+            pinfo = resolve_project_dir(project_id)
+            scripts_dir = pinfo["path"]
+            json_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
+            total_chaps = len(json_files)
+
+            vb = VoiceBank(voice_bank_dir="voice_bank")
+            vb.auto_discover_voices()
+            mgr = LLMConfigManager()
+            director = AIDirector(config_manager=mgr)
+            director.set_provider(req.provider_id or mgr.config.active_provider, req.model or mgr.config.active_model)
+
+            total_fixes = 0
+            for idx, jf in enumerate(json_files):
+                fpath = os.path.join(scripts_dir, jf)
+                with open(fpath, "r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+                script = ChapterScript(**data)
+
+                tasks_status[job_id]["step"] = f"Directing Chapter {idx + 1}/{total_chaps}: {script.title}"
+                tasks_status[job_id]["progress"] = round((idx / total_chaps) * 100, 1)
+
+                updated_script, diffs = director.direct_chapter_script(
+                    script=script,
+                    vb=vb,
+                    batch_size=req.batch_size,
+                    refine_speakers=req.refine_speakers,
+                    refine_instructs=req.refine_instructs,
+                    insert_audio_tokens=req.insert_audio_tokens
+                )
+                total_fixes += len(diffs)
+
+                with open(fpath, "w", encoding="utf-8") as fp:
+                    json.dump(updated_script.model_dump(), fp, indent=2, ensure_ascii=False)
+
+                tasks_status[job_id]["logs"].append(
+                    f"[{time.strftime('%H:%M:%S')}] ✓ {jf}: Corrected {len(diffs)} lines"
+                )
+
+            tasks_status[job_id]["status"] = "completed"
+            tasks_status[job_id]["progress"] = 100.0
+            tasks_status[job_id]["step"] = f"Complete! Fixed {total_fixes} lines across {total_chaps} chapters."
+            tasks_status[job_id]["total_fixed"] = total_fixes
+        except Exception as e:
+            tasks_status[job_id]["status"] = "failed"
+            tasks_status[job_id]["step"] = f"Failed: {str(e)}"
+            tasks_status[job_id]["logs"].append(f"[{time.strftime('%H:%M:%S')}] ✗ Error: {str(e)}")
+
+    background_tasks.add_task(run_job)
+    return {"success": True, "job_id": job_id}
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
 if os.path.exists(WEB_DIR):
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")

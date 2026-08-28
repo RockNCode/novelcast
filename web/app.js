@@ -24,7 +24,9 @@ class NovelCastStudio {
       libraryFilterCategory: 'all',
       libraryFilterGender: 'all',
       librarySearchQuery: '',
-      activeVoiceDeck: 'casting'
+      activeVoiceDeck: 'casting',
+      llmConfig: null,
+      selectedSettingsProvider: 'ollama'
     };
 
     this.audioPlayer = document.getElementById('globalAudioPlayer');
@@ -181,6 +183,44 @@ class NovelCastStudio {
     this.pipelineModalSubtitle = document.getElementById('pipelineModalSubtitle');
     this.btnPausePipeline = document.getElementById('btnPausePipeline');
     this.btnStopPipeline = document.getElementById('btnStopPipeline');
+
+    // Tab 5: Settings & LLM Engine Elements
+    this.llmProviderList = document.getElementById('llmProviderList');
+    this.labelActiveLLM = document.getElementById('labelActiveLLM');
+    this.badgeActiveLLMStatus = document.getElementById('badgeActiveLLMStatus');
+    this.currentProviderTitle = document.getElementById('currentProviderTitle');
+    this.currentProviderDesc = document.getElementById('currentProviderDesc');
+    this.btnSetAsDefaultProvider = document.getElementById('btnSetAsDefaultProvider');
+    this.inputLLMAPIBase = document.getElementById('inputLLMAPIBase');
+    this.inputLLMAPIKey = document.getElementById('inputLLMAPIKey');
+    this.selectLLMDefaultModel = document.getElementById('selectLLMDefaultModel');
+    this.inputLLMCustomModel = document.getElementById('inputLLMCustomModel');
+    this.sliderLLMTemperature = document.getElementById('sliderLLMTemperature');
+    this.valLLMTemperature = document.getElementById('valLLMTemperature');
+    this.btnTestLLMConnection = document.getElementById('btnTestLLMConnection');
+    this.testResultPill = document.getElementById('testResultPill');
+    this.testResultIcon = document.getElementById('testResultIcon');
+    this.testResultMsg = document.getElementById('testResultMsg');
+    this.btnSaveLLMConfig = document.getElementById('btnSaveLLMConfig');
+
+    // AI Fix Dialogue & Speakers Modal
+    this.btnOpenAIFixModal = document.getElementById('btnOpenAIFixModal');
+    this.modalAIFixDialogue = document.getElementById('modalAIFixDialogue');
+    this.btnCloseAIFixModal = document.getElementById('btnCloseAIFixModal');
+    this.btnCancelAIFix = document.getElementById('btnCancelAIFix');
+    this.btnSubmitAIFix = document.getElementById('btnSubmitAIFix');
+    this.selectAIFixProvider = document.getElementById('selectAIFixProvider');
+    this.selectAIFixModel = document.getElementById('selectAIFixModel');
+    this.aiFixCurrentChapterName = document.getElementById('aiFixCurrentChapterName');
+    this.chkAIFixSpeakers = document.getElementById('chkAIFixSpeakers');
+    this.chkAIFixInstructs = document.getElementById('chkAIFixInstructs');
+    this.chkAIFixTokens = document.getElementById('chkAIFixTokens');
+    this.aiFixProgressSection = document.getElementById('aiFixProgressSection');
+    this.aiFixStatusText = document.getElementById('aiFixStatusText');
+    this.aiFixProgressPct = document.getElementById('aiFixProgressPct');
+    this.aiFixProgressBar = document.getElementById('aiFixProgressBar');
+    this.aiFixDiffList = document.getElementById('aiFixDiffList');
+    this.aiFixChangesCount = document.getElementById('aiFixChangesCount');
 
     // Mobile Header Navigation Elements
     this.btnMobileMenuToggle = document.getElementById('btnMobileMenuToggle');
@@ -423,6 +463,31 @@ class NovelCastStudio {
     this.btnPausePipeline.addEventListener('click', () => this.togglePauseJob());
     this.btnStopPipeline.addEventListener('click', () => this.stopJob());
 
+    // Settings & LLM Events
+    this.btnSetAsDefaultProvider?.addEventListener('click', () => this.setActiveLLMProvider());
+    this.btnTestLLMConnection?.addEventListener('click', () => this.testCurrentLLMConnection());
+    this.btnSaveLLMConfig?.addEventListener('click', () => this.saveCurrentLLMConfig());
+    this.sliderLLMTemperature?.addEventListener('input', (e) => {
+      this.valLLMTemperature.textContent = e.target.value;
+    });
+    this.selectLLMDefaultModel?.addEventListener('change', (e) => {
+      if (e.target.value === '__custom__') {
+        this.inputLLMCustomModel.classList.remove('hidden');
+        this.inputLLMCustomModel.focus();
+      } else {
+        this.inputLLMCustomModel.classList.add('hidden');
+      }
+    });
+
+    // AI Fix Dialogue Modal Events
+    this.btnOpenAIFixModal?.addEventListener('click', () => this.openAIFixModal());
+    this.btnCloseAIFixModal?.addEventListener('click', () => this.closeAIFixModal());
+    this.btnCancelAIFix?.addEventListener('click', () => this.closeAIFixModal());
+    this.btnSubmitAIFix?.addEventListener('click', () => this.submitAIFix());
+    this.selectAIFixProvider?.addEventListener('change', (e) => {
+      this.populateAIFixModels(e.target.value);
+    });
+
     // Mobile Hamburger Navigation
     this.btnMobileMenuToggle?.addEventListener('click', () => this.toggleMobileMenu());
     
@@ -444,6 +509,7 @@ class NovelCastStudio {
 
   async initApp() {
     await this.checkEngineHealth();
+    await this.loadLLMConfig();
     await this.loadVoiceBank();
     await this.loadProjectsList();
 
@@ -846,7 +912,8 @@ class NovelCastStudio {
       scriptStudio: 'tabScriptStudio',
       voiceCasting: 'tabVoiceCasting',
       packagingStudio: 'tabPackagingStudio',
-      dubbingStudio: 'tabDubbingStudio'
+      dubbingStudio: 'tabDubbingStudio',
+      settingsStudio: 'tabSettingsStudio'
     };
 
     this.tabPanels.forEach(p => {
@@ -855,6 +922,8 @@ class NovelCastStudio {
 
     if (tabKey === 'packagingStudio') {
       this.renderChapterChecklist();
+    } else if (tabKey === 'settingsStudio') {
+      this.loadLLMConfig();
     }
   }
 
@@ -1982,6 +2051,417 @@ class NovelCastStudio {
   startDubbingDemo() {
     this.dubProgressBox.classList.remove('hidden');
     this.dubLogs.textContent = "▶ Step 1/5: Loading source audiobook...\n▶ Step 2/5: Transcribing & Translating chapters (EN -> ES)...\n▶ Step 3/5: Synthesizing voice-cloned Spanish dubbing with OmniVoice...\n\n[Active dubbing process running in terminal]";
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Settings & LLM Management (Tab 5)
+  // ─────────────────────────────────────────────────────────────
+  async loadLLMConfig() {
+    try {
+      const resp = await fetch('/api/llm/config');
+      this.state.llmConfig = await resp.json();
+      
+      const activeProvKey = this.state.llmConfig.active_provider;
+      const activeProv = this.state.llmConfig.providers[activeProvKey] || {};
+      const activeModel = this.state.llmConfig.active_model || activeProv.default_model || 'default';
+
+      if (this.labelActiveLLM) {
+        this.labelActiveLLM.textContent = `${activeProv.name || activeProvKey} (${activeModel})`;
+      }
+
+      this.renderSettingsProviderList();
+      this.selectSettingsProvider(this.state.selectedSettingsProvider || activeProvKey);
+      this.populateAIFixProviders();
+      this.checkActiveLLMHealth();
+    } catch (e) {
+      console.error('Failed to load LLM config:', e);
+    }
+  }
+
+  async checkActiveLLMHealth() {
+    if (!this.badgeActiveLLMStatus || !this.state.llmConfig) return;
+    const activeProvKey = this.state.llmConfig.active_provider;
+    this.badgeActiveLLMStatus.className = 'status-pill info';
+    this.badgeActiveLLMStatus.textContent = 'Probing LLM...';
+
+    try {
+      const resp = await fetch('/api/llm/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider_id: activeProvKey, model: this.state.llmConfig.active_model })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        this.badgeActiveLLMStatus.className = 'status-pill online';
+        this.badgeActiveLLMStatus.textContent = `✓ Online (${data.latency_ms}ms)`;
+      } else {
+        this.badgeActiveLLMStatus.className = 'status-pill offline';
+        this.badgeActiveLLMStatus.textContent = 'Offline / Unreachable';
+      }
+    } catch (e) {
+      this.badgeActiveLLMStatus.className = 'status-pill offline';
+      this.badgeActiveLLMStatus.textContent = 'Connection Error';
+    }
+  }
+
+  renderSettingsProviderList() {
+    if (!this.llmProviderList || !this.state.llmConfig) return;
+    this.llmProviderList.innerHTML = '';
+
+    const providers = this.state.llmConfig.providers || {};
+    const activeKey = this.state.llmConfig.active_provider;
+
+    Object.entries(providers).forEach(([key, prov]) => {
+      const isSelected = key === this.state.selectedSettingsProvider;
+      const isActive = key === activeKey;
+
+      const item = document.createElement('div');
+      item.className = `provider-nav-item ${isSelected ? 'active' : ''}`;
+      item.innerHTML = `
+        <div class="provider-nav-info">
+          <span class="provider-nav-name">${this.escapeHtml(prov.name)}</span>
+          <span class="provider-nav-type">${prov.type || 'engine'} • ${this.escapeHtml(prov.default_model)}</span>
+        </div>
+        ${isActive ? '<span class="provider-active-indicator">ACTIVE</span>' : ''}
+      `;
+
+      item.addEventListener('click', () => {
+        this.state.selectedSettingsProvider = key;
+        this.renderSettingsProviderList();
+        this.selectSettingsProvider(key);
+      });
+
+      this.llmProviderList.appendChild(item);
+    });
+  }
+
+  selectSettingsProvider(providerKey) {
+    if (!this.state.llmConfig || !this.state.llmConfig.providers[providerKey]) return;
+    const prov = this.state.llmConfig.providers[providerKey];
+    this.state.selectedSettingsProvider = providerKey;
+
+    this.currentProviderTitle.textContent = prov.name;
+    this.currentProviderDesc.textContent = prov.description || '';
+    this.inputLLMAPIBase.value = prov.api_base || '';
+    this.inputLLMAPIKey.value = prov.api_key || '';
+    this.sliderLLMTemperature.value = prov.temperature || 0.2;
+    this.valLLMTemperature.textContent = prov.temperature || 0.2;
+
+    // Populate model options
+    this.selectLLMDefaultModel.innerHTML = '';
+    const models = prov.models && prov.models.length ? prov.models : [prov.default_model];
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      opt.selected = (m === prov.default_model);
+      this.selectLLMDefaultModel.appendChild(opt);
+    });
+
+    // Custom model option
+    const customOpt = document.createElement('option');
+    customOpt.value = '__custom__';
+    customOpt.textContent = '+ Custom Model Name...';
+    this.selectLLMDefaultModel.appendChild(customOpt);
+
+    this.inputLLMCustomModel.classList.add('hidden');
+    this.inputLLMCustomModel.value = '';
+
+    // Reset test pill
+    this.testResultPill.classList.add('hidden');
+  }
+
+  async testCurrentLLMConnection() {
+    const provKey = this.state.selectedSettingsProvider;
+    let model = this.selectLLMDefaultModel.value;
+    if (model === '__custom__') {
+      model = this.inputLLMCustomModel.value.trim();
+    }
+
+    this.btnTestLLMConnection.disabled = true;
+    this.btnTestLLMConnection.textContent = '⚡ Testing...';
+    this.testResultPill.className = 'test-result-box';
+    this.testResultPill.classList.remove('hidden', 'success', 'error');
+    this.testResultIcon.textContent = '⏳';
+    this.testResultMsg.textContent = 'Sending test ping...';
+
+    try {
+      // First persist temporary settings for accurate test
+      await fetch('/api/llm/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: provKey,
+          api_base: this.inputLLMAPIBase.value.trim(),
+          api_key: this.inputLLMAPIKey.value.trim(),
+          default_model: model
+        })
+      });
+
+      const resp = await fetch('/api/llm/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider_id: provKey, model: model })
+      });
+      const data = await resp.json();
+
+      this.btnTestLLMConnection.disabled = false;
+      this.btnTestLLMConnection.innerHTML = '<span>⚡</span> Test Connection';
+
+      if (data.success) {
+        this.testResultPill.classList.add('success');
+        this.testResultIcon.textContent = '✓';
+        this.testResultMsg.textContent = data.message || `Connected in ${data.latency_ms}ms!`;
+      } else {
+        this.testResultPill.classList.add('error');
+        this.testResultIcon.textContent = '✗';
+        this.testResultMsg.textContent = data.message || 'Connection failed';
+      }
+    } catch (e) {
+      this.btnTestLLMConnection.disabled = false;
+      this.btnTestLLMConnection.innerHTML = '<span>⚡</span> Test Connection';
+      this.testResultPill.classList.add('error');
+      this.testResultIcon.textContent = '✗';
+      this.testResultMsg.textContent = `Error: ${e.message}`;
+    }
+  }
+
+  async setActiveLLMProvider() {
+    const provKey = this.state.selectedSettingsProvider;
+    let model = this.selectLLMDefaultModel.value;
+    if (model === '__custom__') {
+      model = this.inputLLMCustomModel.value.trim();
+    }
+
+    try {
+      const resp = await fetch('/api/llm/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          active_provider: provKey,
+          active_model: model,
+          provider_id: provKey,
+          api_base: this.inputLLMAPIBase.value.trim(),
+          api_key: this.inputLLMAPIKey.value.trim(),
+          default_model: model,
+          temperature: parseFloat(this.sliderLLMTemperature.value)
+        })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        alert(`✓ Set "${this.state.llmConfig.providers[provKey].name}" as the active default LLM!`);
+        await this.loadLLMConfig();
+      }
+    } catch (e) {
+      console.error('Failed to set active LLM:', e);
+      alert('Failed to update active LLM.');
+    }
+  }
+
+  async saveCurrentLLMConfig() {
+    const provKey = this.state.selectedSettingsProvider;
+    let model = this.selectLLMDefaultModel.value;
+    if (model === '__custom__') {
+      model = this.inputLLMCustomModel.value.trim();
+    }
+
+    this.btnSaveLLMConfig.disabled = true;
+    this.btnSaveLLMConfig.textContent = 'Saving...';
+
+    try {
+      const resp = await fetch('/api/llm/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: provKey,
+          api_base: this.inputLLMAPIBase.value.trim(),
+          api_key: this.inputLLMAPIKey.value.trim(),
+          default_model: model,
+          temperature: parseFloat(this.sliderLLMTemperature.value)
+        })
+      });
+      const data = await resp.json();
+      this.btnSaveLLMConfig.disabled = false;
+      this.btnSaveLLMConfig.innerHTML = '<span>💾</span> Save Provider Configuration';
+
+      if (data.success) {
+        alert(`✓ Settings for "${this.state.llmConfig.providers[provKey].name}" saved successfully!`);
+        await this.loadLLMConfig();
+      }
+    } catch (e) {
+      console.error('Failed to save LLM config:', e);
+      this.btnSaveLLMConfig.disabled = false;
+      this.btnSaveLLMConfig.innerHTML = '<span>💾</span> Save Provider Configuration';
+      alert('Failed to save configuration.');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // AI Fix Dialogue & Speakers Modal & Execution
+  // ─────────────────────────────────────────────────────────────
+  populateAIFixProviders() {
+    if (!this.selectAIFixProvider || !this.state.llmConfig) return;
+    this.selectAIFixProvider.innerHTML = '';
+
+    const providers = this.state.llmConfig.providers || {};
+    const activeKey = this.state.llmConfig.active_provider;
+
+    Object.entries(providers).forEach(([key, prov]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `${prov.name} (${prov.type})`;
+      opt.selected = (key === activeKey);
+      this.selectAIFixProvider.appendChild(opt);
+    });
+
+    this.populateAIFixModels(this.selectAIFixProvider.value);
+  }
+
+  populateAIFixModels(providerKey) {
+    if (!this.selectAIFixModel || !this.state.llmConfig) return;
+    this.selectAIFixModel.innerHTML = '';
+    const prov = this.state.llmConfig.providers[providerKey];
+    if (!prov) return;
+
+    const models = prov.models && prov.models.length ? prov.models : [prov.default_model];
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      opt.selected = (m === prov.default_model || m === this.state.llmConfig.active_model);
+      this.selectAIFixModel.appendChild(opt);
+    });
+  }
+
+  openAIFixModal() {
+    if (!this.modalAIFixDialogue) return;
+    this.populateAIFixProviders();
+    const curChap = this.state.chaptersList.find(c => c.file === this.state.activeChapter);
+    if (this.aiFixCurrentChapterName) {
+      this.aiFixCurrentChapterName.textContent = curChap ? curChap.title : 'Current Chapter';
+    }
+
+    this.aiFixProgressSection.classList.add('hidden');
+    this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Click "Run AI Director" to begin...</div>';
+    this.aiFixChangesCount.textContent = '0 corrections';
+    this.btnSubmitAIFix.disabled = false;
+    this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
+    this.modalAIFixDialogue.classList.remove('hidden');
+  }
+
+  closeAIFixModal() {
+    if (!this.modalAIFixDialogue) return;
+    this.modalAIFixDialogue.classList.add('hidden');
+  }
+
+  async submitAIFix() {
+    const scope = document.querySelector('input[name="aiFixScope"]:checked')?.value || 'chapter';
+    const providerId = this.selectAIFixProvider.value;
+    const model = this.selectAIFixModel.value;
+    const refineSpeakers = this.chkAIFixSpeakers.checked;
+    const refineInstructs = this.chkAIFixInstructs.checked;
+    const insertTokens = this.chkAIFixTokens.checked;
+
+    this.btnSubmitAIFix.disabled = true;
+    this.btnSubmitAIFix.innerHTML = '<span>⏳</span> Directing Script with AI...';
+    this.aiFixProgressSection.classList.remove('hidden');
+    this.aiFixProgressBar.style.width = '20%';
+    this.aiFixProgressPct.textContent = '20%';
+    this.aiFixStatusText.textContent = `Connecting to ${providerId} (${model})...`;
+    this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Analyzing narrative flow & attribution...</div>';
+
+    if (scope === 'chapter') {
+      try {
+        const payload = {
+          provider_id: providerId,
+          model: model,
+          refine_speakers: refineSpeakers,
+          refine_instructs: refineInstructs,
+          insert_audio_tokens: insertTokens,
+          batch_size: 25
+        };
+
+        const resp = await fetch(`/api/scripts/${this.state.activeProject}/${this.state.activeChapter}/ai-fix`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        this.btnSubmitAIFix.disabled = false;
+        this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
+        this.aiFixProgressBar.style.width = '100%';
+        this.aiFixProgressPct.textContent = '100%';
+
+        if (data.success) {
+          this.aiFixStatusText.textContent = `✓ Directing Complete! Corrected ${data.total_fixed} line(s).`;
+          this.aiFixChangesCount.textContent = `${data.total_fixed} corrections`;
+
+          // Render Diff List
+          if (data.diffs && data.diffs.length > 0) {
+            this.aiFixDiffList.innerHTML = '';
+            data.diffs.forEach(d => {
+              const row = document.createElement('div');
+              row.className = 'diff-item-row';
+              row.innerHTML = `
+                <span class="diff-num">#${d.id}</span>
+                <span class="diff-chip-old">${this.escapeHtml(d.old_speaker)}</span>
+                <span class="diff-arrow">➔</span>
+                <span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>
+                <span class="diff-text-snippet">"${this.escapeHtml(d.text)}"</span>
+              `;
+              this.aiFixDiffList.appendChild(row);
+            });
+          } else {
+            this.aiFixDiffList.innerHTML = '<div class="diff-placeholder" style="color: #34d399;">✓ All speakers and emotion prompts were already accurately attributed!</div>';
+          }
+
+          // Hot-reload current chapter script in Script Studio
+          await this.loadChapterScript(this.state.activeChapter);
+          await this.loadVoiceBank();
+        } else {
+          this.aiFixStatusText.textContent = `Error: ${data.detail || 'Failed to direct chapter'}`;
+        }
+      } catch (e) {
+        console.error('AI Fix error:', e);
+        this.btnSubmitAIFix.disabled = false;
+        this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
+        this.aiFixStatusText.textContent = `Directing failed: ${e.message}`;
+      }
+    } else {
+      // Scope === 'all'
+      try {
+        const payload = {
+          provider_id: providerId,
+          model: model,
+          refine_speakers: refineSpeakers,
+          refine_instructs: refineInstructs,
+          insert_audio_tokens: insertTokens,
+          batch_size: 25
+        };
+
+        const resp = await fetch(`/api/scripts/${this.state.activeProject}/ai-fix-all`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        if (data.success && data.job_id) {
+          this.closeAIFixModal();
+          this.startPipelineProgressPolling(data.job_id);
+        } else {
+          alert('Failed to start batch AI fix job.');
+          this.btnSubmitAIFix.disabled = false;
+          this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
+        }
+      } catch (e) {
+        console.error('Batch AI Fix error:', e);
+        this.btnSubmitAIFix.disabled = false;
+        this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
+        alert('Failed to start batch AI fix job.');
+      }
+    }
   }
 
   escapeHtml(str) {
