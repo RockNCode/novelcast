@@ -943,9 +943,18 @@
 
             <div class="ai-diff-feed-wrapper">
               <div class="diff-feed-header">
-                <span>Live Attribution & Tone Corrections</span>
+                <span>Attribution & Tone Corrections</span>
                 <span id="aiFixChangesCount" class="badge-count">0 corrections</span>
               </div>
+              
+              <!-- Filter Tabs for Corrections -->
+              <div class="diff-filter-bar" id="aiDiffFilterBar">
+                <button class="diff-filter-pill active" data-filter="all">All (<span id="countDiffAll">0</span>)</button>
+                <button class="diff-filter-pill" data-filter="speaker">🎙️ Speakers (<span id="countDiffSpeaker">0</span>)</button>
+                <button class="diff-filter-pill" data-filter="tone">🎭 Tone / Instruct (<span id="countDiffTone">0</span>)</button>
+                <button class="diff-filter-pill" data-filter="token">⚡ Expressions (<span id="countDiffToken">0</span>)</button>
+              </div>
+
               <div id="aiFixDiffList" class="ai-diff-container">
                 <div class="diff-placeholder">Click "Run AI Director" to begin...</div>
               </div>
@@ -954,11 +963,21 @@
 
         </div>
 
-        <div class="modal-footer">
-          <button id="btnCancelAIFix" class="btn btn-secondary">Close</button>
-          <button id="btnSubmitAIFix" class="btn btn-accent">
-            <span>🚀</span> Run AI Script Director
-          </button>
+        <div class="modal-footer ai-fix-footer">
+          <div class="ai-footer-left">
+            <button id="btnRevertAIFixBackup" class="btn btn-secondary btn-sm hidden" title="Restore previous version before AI directing">
+              <span>↩️</span> Undo / Restore Backup
+            </button>
+            <button id="btnExportAIFixChangelog" class="btn btn-secondary btn-sm hidden" title="Export correction summary to file">
+              <span>📋</span> Save / Export Changelog
+            </button>
+          </div>
+          <div class="ai-footer-right">
+            <button id="btnCancelAIFix" class="btn btn-secondary">Close</button>
+            <button id="btnSubmitAIFix" class="btn btn-accent">
+              <span>🚀</span> Run AI Script Director
+            </button>
+          </div>
         </div>
       </div>
     </div>

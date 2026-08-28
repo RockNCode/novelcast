@@ -223,6 +223,13 @@ class NovelCastStudio {
     this.aiFixProgressBar = document.getElementById('aiFixProgressBar');
     this.aiFixDiffList = document.getElementById('aiFixDiffList');
     this.aiFixChangesCount = document.getElementById('aiFixChangesCount');
+    this.btnRevertAIFixBackup = document.getElementById('btnRevertAIFixBackup');
+    this.btnExportAIFixChangelog = document.getElementById('btnExportAIFixChangelog');
+    this.countDiffAll = document.getElementById('countDiffAll');
+    this.countDiffSpeaker = document.getElementById('countDiffSpeaker');
+    this.countDiffTone = document.getElementById('countDiffTone');
+    this.countDiffToken = document.getElementById('countDiffToken');
+    this.aiDiffFilterBar = document.getElementById('aiDiffFilterBar');
 
     // Mobile Header Navigation Elements
     this.btnMobileMenuToggle = document.getElementById('btnMobileMenuToggle');
@@ -486,8 +493,17 @@ class NovelCastStudio {
     this.btnCloseAIFixModal?.addEventListener('click', () => this.closeAIFixModal());
     this.btnCancelAIFix?.addEventListener('click', () => this.closeAIFixModal());
     this.btnSubmitAIFix?.addEventListener('click', () => this.submitAIFix());
+    this.btnRevertAIFixBackup?.addEventListener('click', () => this.revertAIFixBackup());
+    this.btnExportAIFixChangelog?.addEventListener('click', () => this.exportAIFixChangelog());
     this.selectAIFixProvider?.addEventListener('change', (e) => {
       this.populateAIFixModels(e.target.value);
+    });
+    this.aiDiffFilterBar?.querySelectorAll('.diff-filter-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.aiDiffFilterBar.querySelectorAll('.diff-filter-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.filterAIFixDiffs(btn.getAttribute('data-filter'));
+      });
     });
 
     // Mobile Hamburger Navigation
@@ -2356,8 +2372,12 @@ class NovelCastStudio {
     }
 
     this.aiFixProgressSection.classList.add('hidden');
-    this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Click "Run AI Director" to begin...</div>';
-    this.aiFixChangesCount.textContent = '0 corrections';
+    this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Click "Run AI Script Director" to begin...</div>';
+    this.state.aiFixDiffs = [];
+    this.state.aiFixFilter = 'all';
+    this.updateAIFixDiffCounts();
+    if (this.btnRevertAIFixBackup) this.btnRevertAIFixBackup.classList.add('hidden');
+    if (this.btnExportAIFixChangelog) this.btnExportAIFixChangelog.classList.add('hidden');
     this.btnSubmitAIFix.disabled = false;
     this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
     this.modalAIFixDialogue.classList.remove('hidden');
@@ -2366,6 +2386,152 @@ class NovelCastStudio {
   closeAIFixModal() {
     if (!this.modalAIFixDialogue) return;
     this.modalAIFixDialogue.classList.add('hidden');
+  }
+
+  renderAIFixDiffs(diffsToRender) {
+    if (!this.aiFixDiffList) return;
+    if (!diffsToRender || diffsToRender.length === 0) {
+      if (this.state.aiFixDiffs && this.state.aiFixDiffs.length > 0) {
+        this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">No corrections match the selected filter.</div>';
+      } else {
+        this.aiFixDiffList.innerHTML = '<div class="diff-placeholder" style="color: #34d399;">✓ All dialogue lines and speakers are accurately attributed!</div>';
+      }
+      return;
+    }
+
+    this.aiFixDiffList.innerHTML = '';
+    diffsToRender.forEach(d => {
+      const row = document.createElement('div');
+      row.className = 'diff-item-row';
+      
+      let changeBadgeHtml = '';
+      let changeContentHtml = '';
+
+      if (d.speaker_changed) {
+        changeBadgeHtml = '<span class="diff-badge speaker">🎙️ Speaker</span>';
+        changeContentHtml = `
+          <span class="diff-chip-old">${this.escapeHtml(d.old_speaker)}</span>
+          <span class="diff-arrow">➔</span>
+          <span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>
+        `;
+      } else if (d.instruct_changed) {
+        changeBadgeHtml = '<span class="diff-badge tone">🎭 Tone / Instruct</span>';
+        changeContentHtml = `
+          <span class="diff-speaker-name">${this.escapeHtml(d.new_speaker)}</span>
+          <span class="diff-instruct-tag">${this.escapeHtml(d.new_instruct || 'neutral')}</span>
+        `;
+      } else if (d.token_changed) {
+        changeBadgeHtml = '<span class="diff-badge token">⚡ Expression</span>';
+        changeContentHtml = `<span class="diff-speaker-name">${this.escapeHtml(d.new_speaker)}</span>`;
+      } else {
+        changeBadgeHtml = '<span class="diff-badge speaker">✓ Updated</span>';
+        changeContentHtml = `<span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>`;
+      }
+
+      row.innerHTML = `
+        <span class="diff-num">#${d.id}</span>
+        ${changeBadgeHtml}
+        <div class="diff-change-body">${changeContentHtml}</div>
+        <span class="diff-text-snippet" title="${this.escapeHtml(d.text)}">"${this.escapeHtml(d.text)}"</span>
+      `;
+      this.aiFixDiffList.appendChild(row);
+    });
+  }
+
+  filterAIFixDiffs(filterType) {
+    this.state.aiFixFilter = filterType || 'all';
+    const all = this.state.aiFixDiffs || [];
+    let filtered = all;
+    if (filterType === 'speaker') {
+      filtered = all.filter(d => d.speaker_changed);
+    } else if (filterType === 'tone') {
+      filtered = all.filter(d => d.instruct_changed);
+    } else if (filterType === 'token') {
+      filtered = all.filter(d => d.token_changed);
+    }
+    this.renderAIFixDiffs(filtered);
+  }
+
+  updateAIFixDiffCounts() {
+    const all = this.state.aiFixDiffs || [];
+    const countAll = all.length;
+    const countSpk = all.filter(d => d.speaker_changed).length;
+    const countTone = all.filter(d => d.instruct_changed).length;
+    const countTok = all.filter(d => d.token_changed).length;
+
+    if (this.aiFixChangesCount) this.aiFixChangesCount.textContent = `${countAll} corrections`;
+    if (this.countDiffAll) this.countDiffAll.textContent = countAll;
+    if (this.countDiffSpeaker) this.countDiffSpeaker.textContent = countSpk;
+    if (this.countDiffTone) this.countDiffTone.textContent = countTone;
+    if (this.countDiffToken) this.countDiffToken.textContent = countTok;
+  }
+
+  async revertAIFixBackup() {
+    if (!confirm(`Are you sure you want to undo and restore the previous backup for "${this.state.activeChapter}"?`)) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/scripts/${this.state.activeProject}/${this.state.activeChapter}/revert-backup`, {
+        method: 'POST'
+      });
+      const data = await resp.json();
+      if (data.success) {
+        alert('✓ ' + data.message);
+        this.state.aiFixDiffs = [];
+        this.updateAIFixDiffCounts();
+        this.aiFixDiffList.innerHTML = '<div class="diff-placeholder" style="color: #fca5a5;">↩️ Chapter restored to previous state from backup (.bak).</div>';
+        if (this.btnRevertAIFixBackup) this.btnRevertAIFixBackup.classList.add('hidden');
+        await this.loadChapterScript(this.state.activeChapter);
+      } else {
+        alert(data.detail || 'Failed to revert backup.');
+      }
+    } catch (e) {
+      console.error('Revert backup error:', e);
+      alert('Failed to revert backup.');
+    }
+  }
+
+  exportAIFixChangelog() {
+    const diffs = this.state.aiFixDiffs || [];
+    if (diffs.length === 0) {
+      alert('No corrections to export.');
+      return;
+    }
+
+    const curChap = this.state.chaptersList.find(c => c.file === this.state.activeChapter);
+    const title = curChap ? curChap.title : this.state.activeChapter;
+    let report = `========================================================\n`;
+    report += `NOVELCAST AI SCRIPT DIRECTOR — CORRECTION CHANGELOG\n`;
+    report += `Chapter: ${title} (${this.state.activeChapter})\n`;
+    report += `Project: ${this.state.activeProject}\n`;
+    report += `Total Corrections: ${diffs.length}\n`;
+    report += `Generated at: ${new Date().toLocaleString()}\n`;
+    report += `========================================================\n\n`;
+
+    diffs.forEach(d => {
+      report += `[Line #${d.id}]\n`;
+      if (d.speaker_changed) {
+        report += `  🎙️ Speaker: "${d.old_speaker}" ➔ "${d.new_speaker}"\n`;
+      }
+      if (d.instruct_changed) {
+        report += `  🎭 Tone/Instruct: "${d.old_instruct || 'none'}" ➔ "${d.new_instruct || 'none'}"\n`;
+      }
+      if (d.token_changed) {
+        report += `  ⚡ Vocal Expression: Token Added/Updated\n`;
+      }
+      report += `  Text: "${d.text}"\n\n`;
+    });
+
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.state.activeChapter.replace('.json', '')}_ai_corrections.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   async submitAIFix() {
@@ -2384,10 +2550,14 @@ class NovelCastStudio {
     this.btnSubmitAIFix.disabled = true;
     this.btnSubmitAIFix.innerHTML = '<span>⏳</span> Directing Script with AI...';
     this.aiFixProgressSection.classList.remove('hidden');
-    this.aiFixProgressBar.style.width = '20%';
-    this.aiFixProgressPct.textContent = '20%';
+    this.aiFixProgressBar.style.width = '3%';
+    this.aiFixProgressPct.textContent = '3%';
     this.aiFixStatusText.textContent = `Connecting to ${providerId} (${model})...`;
-    this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Analyzing narrative flow & attribution...</div>';
+    this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Streaming batch analysis in real-time...</div>';
+    this.state.aiFixDiffs = [];
+    this.updateAIFixDiffCounts();
+    if (this.btnRevertAIFixBackup) this.btnRevertAIFixBackup.classList.add('hidden');
+    if (this.btnExportAIFixChangelog) this.btnExportAIFixChangelog.classList.add('hidden');
 
     if (scope === 'chapter') {
       try {
@@ -2401,86 +2571,72 @@ class NovelCastStudio {
           batch_size: 25
         };
 
-        const resp = await fetch(`/api/scripts/${this.state.activeProject}/${this.state.activeChapter}/ai-fix`, {
+        const response = await fetch(`/api/scripts/${this.state.activeProject}/${this.state.activeChapter}/ai-fix/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
 
-        if (!resp.ok) {
-          const errText = await resp.text();
-          let errDetail = errText;
-          try {
-            const errJson = JSON.parse(errText);
-            errDetail = errJson.detail || errJson.message || errText;
-          } catch (_) {}
-          this.btnSubmitAIFix.disabled = false;
-          this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
-          this.aiFixStatusText.textContent = `Error (${resp.status}): ${errDetail}`;
-          return;
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
         }
 
-        const data = await resp.json();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete trailing fragment
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(trimmed.slice(6));
+                if (event.type === 'progress') {
+                  this.aiFixProgressBar.style.width = `${event.progress}%`;
+                  this.aiFixProgressPct.textContent = `${event.progress}%`;
+                  this.aiFixStatusText.textContent = event.message || `Processing batch ${event.batch}/${event.total_batches}...`;
+
+                  if (event.new_diffs && event.new_diffs.length > 0) {
+                    this.state.aiFixDiffs.push(...event.new_diffs);
+                    this.updateAIFixDiffCounts();
+                    this.filterAIFixDiffs(this.state.aiFixFilter || 'all');
+                  }
+                } else if (event.type === 'complete') {
+                  this.aiFixProgressBar.style.width = '100%';
+                  this.aiFixProgressPct.textContent = '100%';
+                  this.aiFixStatusText.textContent = `✓ Directing Complete! Corrected ${event.total_fixed} line(s).`;
+                  if (event.diffs) {
+                    this.state.aiFixDiffs = event.diffs;
+                    this.updateAIFixDiffCounts();
+                    this.filterAIFixDiffs(this.state.aiFixFilter || 'all');
+                  }
+                  if (this.btnRevertAIFixBackup) this.btnRevertAIFixBackup.classList.remove('hidden');
+                  if (this.btnExportAIFixChangelog) this.btnExportAIFixChangelog.classList.remove('hidden');
+
+                  // Reload script in Script Studio
+                  await this.loadChapterScript(this.state.activeChapter);
+                  await this.loadVoiceBank();
+                } else if (event.type === 'error') {
+                  this.aiFixStatusText.textContent = `Error: ${event.message}`;
+                }
+              } catch (parseErr) {
+                console.error('Error parsing SSE event:', parseErr);
+              }
+            }
+          }
+        }
+
         this.btnSubmitAIFix.disabled = false;
         this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
-        this.aiFixProgressBar.style.width = '100%';
-        this.aiFixProgressPct.textContent = '100%';
-
-        if (data.success) {
-          this.aiFixStatusText.textContent = `✓ Directing Complete! Corrected ${data.total_fixed} line(s).`;
-          this.aiFixChangesCount.textContent = `${data.total_fixed} corrections`;
-
-          // Render Diff List
-          if (data.diffs && data.diffs.length > 0) {
-            this.aiFixDiffList.innerHTML = '';
-            data.diffs.forEach(d => {
-              const row = document.createElement('div');
-              row.className = 'diff-item-row';
-              
-              let changeBadgeHtml = '';
-              let changeContentHtml = '';
-
-              if (d.speaker_changed) {
-                changeBadgeHtml = '<span class="diff-badge speaker">🎙️ Speaker</span>';
-                changeContentHtml = `
-                  <span class="diff-chip-old">${this.escapeHtml(d.old_speaker)}</span>
-                  <span class="diff-arrow">➔</span>
-                  <span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>
-                `;
-              } else if (d.instruct_changed) {
-                changeBadgeHtml = '<span class="diff-badge tone">🎭 Tone / Instruct</span>';
-                changeContentHtml = `
-                  <span class="diff-speaker-name">${this.escapeHtml(d.new_speaker)}</span>
-                  <span class="diff-instruct-tag">${this.escapeHtml(d.new_instruct || 'neutral')}</span>
-                `;
-              } else if (d.token_changed) {
-                changeBadgeHtml = '<span class="diff-badge token">⚡ Expression</span>';
-                changeContentHtml = `<span class="diff-speaker-name">${this.escapeHtml(d.new_speaker)}</span>`;
-              } else {
-                changeBadgeHtml = '<span class="diff-badge speaker">✓ Updated</span>';
-                changeContentHtml = `<span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>`;
-              }
-
-              row.innerHTML = `
-                <span class="diff-num">#${d.id}</span>
-                ${changeBadgeHtml}
-                <div class="diff-change-body">${changeContentHtml}</div>
-                <span class="diff-text-snippet" title="${this.escapeHtml(d.text)}">"${this.escapeHtml(d.text)}"</span>
-              `;
-              this.aiFixDiffList.appendChild(row);
-            });
-          } else {
-            this.aiFixDiffList.innerHTML = '<div class="diff-placeholder" style="color: #34d399;">✓ All speakers and emotion prompts were already accurately attributed!</div>';
-          }
-
-          // Hot-reload current chapter script in Script Studio
-          await this.loadChapterScript(this.state.activeChapter);
-          await this.loadVoiceBank();
-        } else {
-          this.aiFixStatusText.textContent = `Error: ${data.detail || 'Failed to direct chapter'}`;
-        }
       } catch (e) {
-        console.error('AI Fix error:', e);
+        console.error('AI Fix stream error:', e);
         this.btnSubmitAIFix.disabled = false;
         this.btnSubmitAIFix.innerHTML = '<span>🚀</span> Run AI Script Director';
         this.aiFixStatusText.textContent = `Directing failed: ${e.message}`;

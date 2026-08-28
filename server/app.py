@@ -1290,7 +1290,7 @@ def direct_chapter_script_api(
     director = AIDirector(config_manager=mgr)
     director.set_provider(prov_id, model_override=model_ovr)
 
-    # Collect candidate characters
+    # Candidate characters
     from novelcast.core.character_detector import CharacterDetector
     detector = CharacterDetector(voice_bank=vb)
     detected = detector.detect_from_scripts([script])
@@ -1298,6 +1298,14 @@ def direct_chapter_script_api(
         {"name": c["name"], "gender": c["gender"], "description": c.get("sample_quote", "")}
         for c in detected
     ]
+
+    # Automatically create .bak backup before applying fixes
+    bak_path = fpath + ".bak"
+    try:
+        import shutil
+        shutil.copyfile(fpath, bak_path)
+    except Exception:
+        pass
 
     updated_script, diffs = director.direct_chapter_script(
         script=script,
@@ -1321,8 +1329,140 @@ def direct_chapter_script_api(
         "total_segments": len(script.segments),
         "total_fixed": len(diffs),
         "diffs": diffs,
+        "backup_created": os.path.exists(bak_path),
         "segments": [s.model_dump() for s in updated_script.segments]
     }
+
+@app.post("/api/scripts/{project_id}/{chapter_file}/ai-fix/stream")
+async def direct_chapter_script_stream_api(
+    project_id: str,
+    chapter_file: str,
+    req: AIDirectRequest
+):
+    """
+    Streams real-time progress, live batch corrections, and diffs via Server-Sent Events (SSE).
+    """
+    pinfo = resolve_project_dir(project_id)
+    scripts_dir = pinfo["path"]
+    fpath = os.path.join(scripts_dir, chapter_file)
+
+    if not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail=f"Chapter script '{chapter_file}' not found")
+
+    with open(fpath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "chapter_id" not in data:
+        data["chapter_id"] = os.path.splitext(chapter_file)[0]
+    script = ChapterScript(**data)
+
+    vb = VoiceBank(voice_bank_dir="voice_bank")
+    vb.auto_discover_voices()
+
+    mgr = LLMConfigManager()
+    prov_id = req.provider_id or mgr.config.active_provider
+    model_ovr = req.model or mgr.config.active_model
+
+    director = AIDirector(config_manager=mgr)
+    director.set_provider(prov_id, model_override=model_ovr)
+
+    # Collect candidate characters
+    from novelcast.core.character_detector import CharacterDetector
+    detector = CharacterDetector(voice_bank=vb)
+    detected = detector.detect_from_scripts([script])
+    candidate_chars = [
+        {"name": c["name"], "gender": c["gender"], "description": c.get("sample_quote", "")}
+        for c in detected
+    ]
+
+    import asyncio
+
+    async def event_generator():
+        queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def progress_cb(cur_b, total_b, total_fixes, message, new_diffs=None):
+            pct = round((cur_b / total_b) * 100, 1) if total_b > 0 else 0
+            event_data = {
+                "type": "progress",
+                "batch": cur_b,
+                "total_batches": total_b,
+                "progress": pct,
+                "message": message,
+                "total_fixed": total_fixes,
+                "new_diffs": new_diffs or []
+            }
+            loop.call_soon_threadsafe(queue.put_nowait, event_data)
+
+        def run_direct():
+            try:
+                # Create backup
+                bak_path = fpath + ".bak"
+                try:
+                    import shutil
+                    shutil.copyfile(fpath, bak_path)
+                except Exception:
+                    pass
+
+                updated_script, diffs = director.direct_chapter_script(
+                    script=script,
+                    candidate_characters=candidate_chars,
+                    vb=vb,
+                    story_lore=req.story_lore,
+                    batch_size=req.batch_size,
+                    refine_speakers=req.refine_speakers,
+                    refine_instructs=req.refine_instructs,
+                    insert_audio_tokens=req.insert_audio_tokens,
+                    progress_callback=progress_cb
+                )
+
+                # Save to disk
+                with open(fpath, "w", encoding="utf-8") as f:
+                    json.dump(updated_script.model_dump(), f, indent=2, ensure_ascii=False)
+
+                event_data = {
+                    "type": "complete",
+                    "success": True,
+                    "chapter_id": script.chapter_id,
+                    "title": script.title,
+                    "total_segments": len(script.segments),
+                    "total_fixed": len(diffs),
+                    "diffs": diffs,
+                    "backup_created": os.path.exists(bak_path)
+                }
+                loop.call_soon_threadsafe(queue.put_nowait, event_data)
+            except Exception as e:
+                err_data = {"type": "error", "message": str(e)}
+                loop.call_soon_threadsafe(queue.put_nowait, err_data)
+
+        # Launch worker
+        asyncio.create_task(asyncio.to_thread(run_direct))
+
+        # Yield events from queue
+        while True:
+            item = await queue.get()
+            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+            if item.get("type") in ("complete", "error"):
+                break
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.post("/api/scripts/{project_id}/{chapter_file}/revert-backup")
+def revert_chapter_backup_api(project_id: str, chapter_file: str):
+    """Reverts a chapter script to its .bak version created before AI directing."""
+    pinfo = resolve_project_dir(project_id)
+    scripts_dir = pinfo["path"]
+    fpath = os.path.join(scripts_dir, chapter_file)
+    bak_path = fpath + ".bak"
+
+    if not os.path.exists(bak_path):
+        raise HTTPException(status_code=404, detail="No previous backup (.bak) found for this chapter.")
+
+    import shutil
+    shutil.copyfile(bak_path, fpath)
+    with open(fpath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    return {"success": True, "message": f"Successfully reverted '{chapter_file}' to previous backup!", "script": data}
 
 @app.post("/api/scripts/{project_id}/ai-fix-all")
 def direct_all_chapters_api(

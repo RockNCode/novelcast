@@ -257,12 +257,16 @@ class AIDirector:
 
         for b_idx, batch in enumerate(batches):
             if progress_callback:
-                progress_callback(
-                    b_idx + 1,
-                    total_batches,
-                    len(diff_changelog),
-                    f"Directing lines {batch[0].id} to {batch[-1].id} ({b_idx + 1}/{total_batches})..."
-                )
+                try:
+                    progress_callback(
+                        b_idx,
+                        total_batches,
+                        len(diff_changelog),
+                        f"Analyzing lines {batch[0].id} to {batch[-1].id} ({b_idx + 1}/{total_batches})...",
+                        None
+                    )
+                except Exception:
+                    pass
 
             # Preceding lookbehind context (3 lines before this batch)
             start_pos = b_idx * batch_size
@@ -295,6 +299,7 @@ Example format:
   {{"id": {batch[-1].id}, "speaker": "Subaru", "instruct": "male, teenager, moderate pitch", "audio_token": null}}
 ]
 """
+            batch_diffs = []
             try:
                 raw_response = self._call_llm(prompt)
                 results = self._parse_llm_json(raw_response)
@@ -343,7 +348,7 @@ Example format:
                         if changed:
                             # Recompute hash for cache invalidation
                             seg.compute_hash()
-                            diff_changelog.append({
+                            d_item = {
                                 "id": seg.id,
                                 "speaker_changed": (old_spk != seg.speaker),
                                 "instruct_changed": (old_inst != seg.instruct),
@@ -353,17 +358,36 @@ Example format:
                                 "text": seg.text,
                                 "old_instruct": old_inst,
                                 "new_instruct": seg.instruct
-                            })
+                            }
+                            diff_changelog.append(d_item)
+                            batch_diffs.append(d_item)
 
             except Exception as e:
                 print(f"[AIDirector] Batch {b_idx + 1} processing warning: {e}. Keeping original segment values.")
 
+            if progress_callback:
+                try:
+                    fix_msg = f"Found {len(batch_diffs)} correction(s)" if batch_diffs else "No changes needed"
+                    progress_callback(
+                        b_idx + 1,
+                        total_batches,
+                        len(diff_changelog),
+                        f"Finished lines {batch[0].id}–{batch[-1].id} ({b_idx + 1}/{total_batches}) — {fix_msg}",
+                        batch_diffs
+                    )
+                except Exception:
+                    pass
+
         if progress_callback:
-            progress_callback(
-                total_batches,
-                total_batches,
-                len(diff_changelog),
-                f"✓ Finished directing chapter. Corrected {len(diff_changelog)} line(s)."
-            )
+            try:
+                progress_callback(
+                    total_batches,
+                    total_batches,
+                    len(diff_changelog),
+                    f"✓ Finished directing chapter. Corrected {len(diff_changelog)} line(s).",
+                    None
+                )
+            except Exception:
+                pass
 
         return script, diff_changelog

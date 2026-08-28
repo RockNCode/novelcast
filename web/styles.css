@@ -2487,8 +2487,60 @@ body {
   font-weight: 600;
 }
 
+.diff-filter-bar {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.diff-filter-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.diff-filter-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.diff-filter-pill.active {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.6);
+  color: #c7d2fe;
+  font-weight: 600;
+}
+
+.ai-fix-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ai-footer-left {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ai-footer-right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .ai-diff-container {
-  max-height: 180px;
+  max-height: 220px;
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.4);
   border-radius: var(--radius-sm);
