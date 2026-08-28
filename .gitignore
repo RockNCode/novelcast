@@ -59,3 +59,4 @@ scratch/
 api_keys
 .env
 *.key
+llm_config.json
