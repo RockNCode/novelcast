@@ -60,6 +60,15 @@ DEFAULT_PRESETS = {
         "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
         "description": "Ultra-fast LPU inference (500+ tokens/sec)."
     },
+    "gemini": {
+        "name": "Google Gemini",
+        "type": "cloud",
+        "api_base": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api_key": "",
+        "default_model": "gemini-2.5-flash",
+        "models": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "description": "Google's Gemini models with massive context window and lightning-fast dialogue reasoning."
+    },
     "openrouter": {
         "name": "OpenRouter",
         "type": "cloud",
@@ -110,7 +119,16 @@ class LLMConfigManager:
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return LLMGlobalConfig(**data)
+                    cfg = LLMGlobalConfig(**data)
+                    # Auto-inject any missing presets (e.g. newly added Gemini)
+                    updated = False
+                    for key, p in DEFAULT_PRESETS.items():
+                        if key not in cfg.providers:
+                            cfg.providers[key] = LLMProviderConfig(**p)
+                            updated = True
+                    if updated:
+                        self._save_raw(cfg)
+                    return cfg
             except Exception as e:
                 print(f"[LLMConfigManager] Warning loading {self.config_path}: {e}. Creating default.")
         

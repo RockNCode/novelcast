@@ -14,8 +14,8 @@ console = Console()
 
 def direct_script(
     script_path: str = typer.Argument(..., help="Path to chapter script JSON file (e.g. data/scripts/vol2_02_capitulo_2.json)"),
-    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM Provider ID (ollama, lmstudio, deepseek, openai, groq, openrouter, custom)"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override (e.g. qwen2.5:7b, deepseek-chat, gpt-4o-mini)"),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM Provider ID (ollama, lmstudio, deepseek, openai, groq, gemini, openrouter, custom)"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model override (e.g. gemini-2.5-flash, qwen2.5:7b, deepseek-chat, gpt-4o-mini)"),
     batch_size: int = typer.Option(25, "--batch-size", "-b", help="Number of dialogue lines to process per LLM context window"),
     config: str = typer.Option("voice_config.json", "--config", "-c", help="Path to voice_config.json"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Optional custom output JSON path (defaults to overwriting script_path)")
