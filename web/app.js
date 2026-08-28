@@ -2416,12 +2416,36 @@ class NovelCastStudio {
             data.diffs.forEach(d => {
               const row = document.createElement('div');
               row.className = 'diff-item-row';
+              
+              let changeBadgeHtml = '';
+              let changeContentHtml = '';
+
+              if (d.speaker_changed) {
+                changeBadgeHtml = '<span class="diff-badge speaker">🎙️ Speaker</span>';
+                changeContentHtml = `
+                  <span class="diff-chip-old">${this.escapeHtml(d.old_speaker)}</span>
+                  <span class="diff-arrow">➔</span>
+                  <span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>
+                `;
+              } else if (d.instruct_changed) {
+                changeBadgeHtml = '<span class="diff-badge tone">🎭 Tone / Instruct</span>';
+                changeContentHtml = `
+                  <span class="diff-speaker-name">${this.escapeHtml(d.new_speaker)}</span>
+                  <span class="diff-instruct-tag">${this.escapeHtml(d.new_instruct || 'neutral')}</span>
+                `;
+              } else if (d.token_changed) {
+                changeBadgeHtml = '<span class="diff-badge token">⚡ Expression</span>';
+                changeContentHtml = `<span class="diff-speaker-name">${this.escapeHtml(d.new_speaker)}</span>`;
+              } else {
+                changeBadgeHtml = '<span class="diff-badge speaker">✓ Updated</span>';
+                changeContentHtml = `<span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>`;
+              }
+
               row.innerHTML = `
                 <span class="diff-num">#${d.id}</span>
-                <span class="diff-chip-old">${this.escapeHtml(d.old_speaker)}</span>
-                <span class="diff-arrow">➔</span>
-                <span class="diff-chip-new">${this.escapeHtml(d.new_speaker)}</span>
-                <span class="diff-text-snippet">"${this.escapeHtml(d.text)}"</span>
+                ${changeBadgeHtml}
+                <div class="diff-change-body">${changeContentHtml}</div>
+                <span class="diff-text-snippet" title="${this.escapeHtml(d.text)}">"${this.escapeHtml(d.text)}"</span>
               `;
               this.aiFixDiffList.appendChild(row);
             });

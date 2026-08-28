@@ -337,6 +337,9 @@ Example format:
                             seg.compute_hash()
                             diff_changelog.append({
                                 "id": seg.id,
+                                "speaker_changed": (old_spk != seg.speaker),
+                                "instruct_changed": (old_inst != seg.instruct),
+                                "token_changed": (old_text != seg.text),
                                 "old_speaker": old_spk,
                                 "new_speaker": seg.speaker,
                                 "text": seg.text,
