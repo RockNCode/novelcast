@@ -1192,97 +1192,208 @@ def batch_generate_audio(req: GenerateTaskRequest, background_tasks: BackgroundT
     }
     background_tasks.add_task(_run_synthesis_job_worker, job_id, req)
     return {"success": True, "job_id": job_id, "status": "started"}
+def _run_stitch_job_worker(job_id: str, req: StitchRequest):
+    job = jobs_db[job_id]
+    try:
+        pinfo = resolve_project_dir(req.project_id)
+        scripts_dir = pinfo["path"]
+        cache_dir = pinfo["cache"]
+        out_dir = os.path.join(pinfo["output"], "chapters")
+        os.makedirs(out_dir, exist_ok=True)
+
+        from novelcast.core.schema import PauseSettings
+        pauses = PauseSettings(speaker_change_ms=req.speaker_change_ms, same_speaker_ms=req.same_speaker_ms)
+        stitcher = AudioStitcher(pause_settings=pauses)
+        engine = get_engine("omnivoice", cache_dir=cache_dir)
+
+        target_files = []
+        if req.chapter_id:
+            target_files = [f"{req.chapter_id}.json" if not req.chapter_id.endswith(".json") else req.chapter_id]
+        else:
+            target_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
+
+        job["status"] = "running"
+        job["total_items"] = len(target_files)
+        job["current_item"] = 0
+        target_label = req.chapter_id or f"{len(target_files)} Chapters"
+        job["step_name"] = f"Stitching Chapter Audio Tracks ({target_label})"
+        job["logs"].append(f"Starting audio stitcher for {len(target_files)} chapter(s)...")
+
+        def check_cancelled() -> bool:
+            return bool(job.get("cancel_requested", False))
+
+        results = []
+        for idx, tf in enumerate(target_files):
+            if check_cancelled():
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Stitching stopped by user.")
+                return
+
+            s_path = os.path.join(scripts_dir, tf)
+            if not os.path.exists(s_path):
+                continue
+            with open(s_path, "r", encoding="utf-8") as fp:
+                s_data = json.load(fp)
+                if isinstance(s_data, dict) and "chapter_id" not in s_data:
+                    s_data["chapter_id"] = os.path.splitext(tf)[0]
+                cscript = ChapterScript(**s_data)
+
+            audio_files = [engine.get_cache_path(s) for s in cscript.segments]
+            out_mp3 = os.path.join(out_dir, f"{cscript.chapter_id}.mp3")
+
+            def on_seg_progress(cur_seg, tot_segs, seg):
+                if check_cancelled():
+                    return
+                chap_weight = 100.0 / max(len(target_files), 1)
+                base_pct = idx * chap_weight
+                intra_pct = (cur_seg / max(tot_segs, 1)) * chap_weight
+                job["progress_pct"] = round(min(base_pct + intra_pct, 99.0), 1)
+                if cur_seg % 20 == 0 or cur_seg == tot_segs:
+                    job["logs"].append(f"[{job['progress_pct']}%] Stitching {cscript.chapter_id} segment {cur_seg}/{tot_segs} ({seg.speaker})...")
+
+            success = stitcher.stitch_chapter(cscript, audio_files, out_mp3, progress_callback=on_seg_progress, is_cancelled=check_cancelled)
+            if check_cancelled():
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Stitching stopped by user.")
+                return
+
+            size_mb = round(os.path.getsize(out_mp3) / (1024*1024), 2) if os.path.exists(out_mp3) else 0
+            results.append({
+                "chapter_id": cscript.chapter_id,
+                "success": success,
+                "file": out_mp3,
+                "size_mb": size_mb
+            })
+            job["current_item"] = idx + 1
+            pct = round(((idx + 1) / max(len(target_files), 1)) * 100.0, 1)
+            job["progress_pct"] = min(pct, 100.0)
+            job["logs"].append(f"✓ Stitched Chapter {idx + 1}/{len(target_files)}: {cscript.title} ({size_mb} MB)")
+
+        job["status"] = "completed"
+        job["progress_pct"] = 100.0
+        job["logs"].append(f"🎉 Chapter stitching complete! Generated {len(results)} MP3 track(s).")
+        job["result"] = {"stitched_chapters": results}
+
+    except Exception as e:
+        jobs_db[job_id]["status"] = "failed"
+        jobs_db[job_id]["error"] = str(e)
+        jobs_db[job_id]["logs"].append(f"❌ Stitching error: {str(e)}")
+
 @app.post("/api/tasks/stitch")
-def stitch_project_chapter(req: StitchRequest):
-    """Stitches chapter scripts into MP3 tracks."""
-    pinfo = resolve_project_dir(req.project_id)
-    scripts_dir = pinfo["path"]
-    cache_dir = pinfo["cache"]
-    out_dir = os.path.join(pinfo["output"], "chapters")
-    os.makedirs(out_dir, exist_ok=True)
+def stitch_project_chapter(req: StitchRequest, background_tasks: BackgroundTasks):
+    """Stitches chapter scripts into continuous MP3 tracks asynchronously with live progress."""
+    job_id = f"job_stitch_{int(time.time())}_{req.project_id}"
+    jobs_db[job_id] = {
+        "job_id": job_id,
+        "type": "chapter_stitch",
+        "project_id": req.project_id,
+        "chapter_id": req.chapter_id,
+        "status": "pending",
+        "step": 1,
+        "total_steps": 1,
+        "step_name": "Initializing Audio Stitcher",
+        "progress_pct": 0.0,
+        "current_item": 0,
+        "total_items": 0,
+        "pause_requested": False,
+        "cancel_requested": False,
+        "logs": [f"Initializing audio stitcher for {req.chapter_id or req.project_id}..."],
+        "result": None,
+        "error": None
+    }
+    background_tasks.add_task(_run_stitch_job_worker, job_id, req)
+    return {"success": True, "job_id": job_id, "status": "started"}
 
-    from novelcast.core.schema import PauseSettings
-    pauses = PauseSettings(speaker_change_ms=req.speaker_change_ms, same_speaker_ms=req.same_speaker_ms)
-    stitcher = AudioStitcher(pause_settings=pauses)
-    engine = get_engine("omnivoice", cache_dir=cache_dir)
+def _run_package_job_worker(job_id: str, req: PackageM4BRequest):
+    job = jobs_db[job_id]
+    try:
+        pinfo = resolve_project_dir(req.project_id)
+        chapters_dir = os.path.join(pinfo["output"], "chapters")
+        if not os.path.exists(chapters_dir):
+            chapters_dir = pinfo["output"]
 
-    target_files = []
-    if req.chapter_id:
-        target_files = [f"{req.chapter_id}.json" if not req.chapter_id.endswith(".json") else req.chapter_id]
-    else:
-        target_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
+        mp3_files = sorted([f for f in os.listdir(chapters_dir) if f.endswith((".mp3", ".m4a"))])
+        if not mp3_files:
+            raise ValueError("No chapter MP3 files found to package")
 
-    results = []
-    for tf in target_files:
-        s_path = os.path.join(scripts_dir, tf)
-        if not os.path.exists(s_path):
-            continue
-        with open(s_path, "r", encoding="utf-8") as fp:
-            s_data = json.load(fp)
-            cscript = ChapterScript(**s_data)
+        cover_art = req.cover_image
+        if not cover_art or not os.path.exists(cover_art):
+            for cname in ["cover.jpg", "cover_vol2.jpg", "cover_vol3.jpg", "cover.png"]:
+                cand = os.path.join(pinfo["output"], cname)
+                if os.path.exists(cand):
+                    cover_art = cand
+                    break
 
-        audio_files = [engine.get_cache_path(s) for s in cscript.segments]
-        out_mp3 = os.path.join(out_dir, f"{cscript.chapter_id}.mp3")
-        
-        success = stitcher.stitch_chapter(cscript, audio_files, out_mp3)
-        results.append({
-            "chapter_id": cscript.chapter_id,
-            "success": success,
-            "file": out_mp3,
-            "size_mb": round(os.path.getsize(out_mp3) / (1024*1024), 2) if os.path.exists(out_mp3) else 0
-        })
+        out_m4b = os.path.join(pinfo["output"], f"{req.title.replace(' ', '_')}.m4b")
+        chapter_entries = []
+        for f in mp3_files:
+            base_name = os.path.splitext(f)[0]
+            chapter_entries.append({
+                "title": base_name.replace("_", " ").title(),
+                "audio_path": os.path.join(chapters_dir, f)
+            })
 
-    return {"success": True, "stitched_chapters": results}
+        job["status"] = "running"
+        job["total_items"] = len(chapter_entries)
+        job["step_name"] = f"Compiling Master M4B Audiobook: {req.title}"
+        job["logs"].append(f"Initializing M4B packaging with {len(chapter_entries)} chapters...")
+
+        def on_pkg_progress(msg: str, pct: float):
+            job["progress_pct"] = round(pct, 1)
+            job["logs"].append(f"[{job['progress_pct']}%] {msg}")
+
+        packager = AudiobookPackager(bitrate=req.bitrate)
+        success = packager.package_m4b(
+            chapter_files=chapter_entries,
+            output_m4b_path=out_m4b,
+            book_title=req.title,
+            author=req.author,
+            cover_image_path=cover_art,
+            progress_callback=on_pkg_progress
+        )
+
+        if success and os.path.exists(out_m4b):
+            size_mb = round(os.path.getsize(out_m4b) / (1024*1024), 2)
+            job["status"] = "completed"
+            job["progress_pct"] = 100.0
+            job["logs"].append(f"🎉 Master M4B Audiobook packaged successfully: {out_m4b} ({size_mb} MB)")
+            job["result"] = {
+                "title": req.title,
+                "m4b_path": out_m4b,
+                "size_mb": size_mb,
+                "download_url": f"/api/audio/download?path={out_m4b}"
+            }
+        else:
+            raise ValueError("Failed to produce master M4B container")
+
+    except Exception as e:
+        jobs_db[job_id]["status"] = "failed"
+        jobs_db[job_id]["error"] = str(e)
+        jobs_db[job_id]["logs"].append(f"❌ M4B Packaging error: {str(e)}")
 
 @app.post("/api/tasks/package")
-def package_master_m4b(req: PackageM4BRequest):
-    """Packages all stitched chapters into a master M4B."""
-    pinfo = resolve_project_dir(req.project_id)
-    chapters_dir = os.path.join(pinfo["output"], "chapters")
-    if not os.path.exists(chapters_dir):
-        chapters_dir = pinfo["output"]
-
-    mp3_files = sorted([f for f in os.listdir(chapters_dir) if f.endswith((".mp3", ".m4a"))])
-    if not mp3_files:
-        raise HTTPException(status_code=400, detail="No chapter MP3 files found to package")
-
-    cover_art = req.cover_image
-    if not cover_art or not os.path.exists(cover_art):
-        # Try finding standard cover in output dir
-        for cname in ["cover.jpg", "cover_vol2.jpg", "cover_vol3.jpg", "cover.png"]:
-            cand = os.path.join(pinfo["output"], cname)
-            if os.path.exists(cand):
-                cover_art = cand
-                break
-
-    out_m4b = os.path.join(pinfo["output"], f"{req.title.replace(' ', '_')}.m4b")
-    
-    chapter_entries = []
-    for f in mp3_files:
-        base_name = os.path.splitext(f)[0]
-        chapter_entries.append({
-            "title": base_name.replace("_", " ").title(),
-            "audio_path": os.path.join(chapters_dir, f)
-        })
-
-    packager = AudiobookPackager(bitrate=req.bitrate)
-    success = packager.package_m4b(
-        chapter_files=chapter_entries,
-        output_m4b_path=out_m4b,
-        book_title=req.title,
-        author=req.author,
-        cover_image_path=cover_art
-    )
-
-    if success and os.path.exists(out_m4b):
-        return {
-            "success": True,
-            "m4b_path": out_m4b,
-            "size_mb": round(os.path.getsize(out_m4b) / (1024*1024), 2),
-            "download_url": f"/api/audio/download?path={out_m4b}"
-        }
-
-    raise HTTPException(status_code=500, detail="Failed to package master M4B")
+def package_master_m4b(req: PackageM4BRequest, background_tasks: BackgroundTasks):
+    """Packages all stitched chapters into a master M4B asynchronously with live progress."""
+    job_id = f"job_pkg_{int(time.time())}_{req.project_id}"
+    jobs_db[job_id] = {
+        "job_id": job_id,
+        "type": "m4b_package",
+        "project_id": req.project_id,
+        "status": "pending",
+        "step": 1,
+        "total_steps": 1,
+        "step_name": "Initializing M4B Packager",
+        "progress_pct": 0.0,
+        "current_item": 0,
+        "total_items": 0,
+        "pause_requested": False,
+        "cancel_requested": False,
+        "logs": [f"Initializing master M4B compilation for {req.title}..."],
+        "result": None,
+        "error": None
+    }
+    background_tasks.add_task(_run_package_job_worker, job_id, req)
+    return {"success": True, "job_id": job_id, "status": "started"}
 
 @app.get("/api/audio/download")
 def download_file(path: str = Query(...)):

@@ -1,7 +1,7 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Callable
 from pydub import AudioSegment
-from novelcast.core.schema import ChapterScript, PauseSettings
+from novelcast.core.schema import ChapterScript, PauseSettings, Segment
 
 class AudioStitcher:
     """
@@ -17,16 +17,24 @@ class AudioStitcher:
         script: ChapterScript,
         audio_files: List[Optional[str]],
         output_path: str,
-        normalize_db: Optional[float] = -16.0
+        normalize_db: Optional[float] = -16.0,
+        progress_callback: Optional[Callable[[int, int, Segment], None]] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None
     ) -> bool:
         chunks: List[AudioSegment] = []
         last_speaker = None
         target_sample_rate = 24000
         target_channels = 1
         target_sample_width = 2
+        total_segs = len(script.segments)
 
         for idx, (seg, apath) in enumerate(zip(script.segments, audio_files)):
+            if is_cancelled and is_cancelled():
+                return False
+
             if not apath or not os.path.exists(apath) or os.path.getsize(apath) < 100:
+                if progress_callback:
+                    progress_callback(idx + 1, total_segs, seg)
                 continue
 
             try:
@@ -35,6 +43,8 @@ class AudioStitcher:
                 if chunk_audio.frame_rate != target_sample_rate or chunk_audio.channels != target_channels or chunk_audio.sample_width != target_sample_width:
                     chunk_audio = chunk_audio.set_frame_rate(target_sample_rate).set_channels(target_channels).set_sample_width(target_sample_width)
             except Exception:
+                if progress_callback:
+                    progress_callback(idx + 1, total_segs, seg)
                 continue
 
             # Calculate pause before this chunk (or after previous)
@@ -54,7 +64,10 @@ class AudioStitcher:
             chunks.append(chunk_audio)
             last_speaker = seg.speaker
 
-        if not chunks:
+            if progress_callback:
+                progress_callback(idx + 1, total_segs, seg)
+
+        if not chunks or (is_cancelled and is_cancelled()):
             return False
 
         # Fast O(N) concatenation

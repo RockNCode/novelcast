@@ -1,6 +1,6 @@
 import os
 import subprocess
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable
 
 class AudiobookPackager:
     """
@@ -66,7 +66,8 @@ class AudiobookPackager:
         output_m4b_path: str,
         book_title: str = "NovelCast Audiobook",
         author: str = "Author",
-        cover_image_path: Optional[str] = None
+        cover_image_path: Optional[str] = None,
+        progress_callback: Optional[Callable[[str, float], None]] = None
     ) -> bool:
         if not chapter_files:
             return False
@@ -78,6 +79,8 @@ class AudiobookPackager:
         meta_path = os.path.join(temp_dir, "temp_ffmetadata.txt")
 
         # 1. Compute chapter durations and write concat list
+        if progress_callback:
+            progress_callback(f"Analyzing {len(chapter_files)} chapter track durations with ffprobe...", 20.0)
         chap_meta_list = []
         with open(concat_list_path, "w", encoding="utf-8") as f:
             for c in chapter_files:
@@ -86,9 +89,13 @@ class AudiobookPackager:
                 f.write(f"file '{os.path.abspath(c['audio_path'])}'\n")
 
         # 2. Write FFmetadata file
+        if progress_callback:
+            progress_callback("Generating FFmetadata table & chapter TOC markers...", 40.0)
         self.generate_metadata_file(chap_meta_list, book_title=book_title, author=author, output_meta_path=meta_path)
 
         # 3. Concatenate and transcode to AAC stream
+        if progress_callback:
+            progress_callback(f"Transcoding & concatenating audio tracks to AAC ({self.bitrate})...", 65.0)
         concat_cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0",
@@ -100,6 +107,8 @@ class AudiobookPackager:
         subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
         # 4. Merge AAC audio stream, metadata, and optional cover image into M4B
+        if progress_callback:
+            progress_callback("Multiplexing audio stream, chapter TOC metadata & cover art into master M4B...", 85.0)
         if cover_image_path and os.path.exists(cover_image_path):
             final_cmd = [
                 "ffmpeg", "-y",
@@ -132,5 +141,8 @@ class AudiobookPackager:
             if os.path.exists(tmp):
                 try: os.remove(tmp)
                 except Exception: pass
+
+        if progress_callback:
+            progress_callback("Master M4B file finalized successfully!", 100.0)
 
         return os.path.exists(output_m4b_path) and os.path.getsize(output_m4b_path) > 1000

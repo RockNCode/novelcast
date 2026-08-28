@@ -896,9 +896,20 @@ class NovelCastStudio {
     // On Completed
     if (job.status === 'completed' && job.result) {
       this.pipelineSuccessBanner.classList.remove('hidden');
-      this.successTitle.textContent = `${job.result.title} Ready!`;
-      this.successMeta.textContent = `Master M4B: ${job.result.size_mb} MB • AAC High Quality`;
-      this.btnPipelineDownloadM4B.href = job.result.download_url;
+      if (job.type === 'chapter_synthesis') {
+        this.successTitle.textContent = 'Speech Chunks Synthesized Successfully!';
+        this.successMeta.textContent = `Completed ${job.result.total_chunks || 0} lines (${job.result.newly_generated || 0} generated, ${job.result.already_cached || 0} cached).`;
+        this.btnPipelineDownloadM4B.style.display = 'none';
+      } else if (job.type === 'chapter_stitch') {
+        this.successTitle.textContent = 'Chapter MP3 Tracks Stitched Successfully!';
+        this.successMeta.textContent = `Generated ${job.result.stitched_chapters?.length || 0} stitched MP3 continuous audio track(s).`;
+        this.btnPipelineDownloadM4B.style.display = 'none';
+      } else if (job.type === 'm4b_package' || job.result.m4b_path) {
+        this.successTitle.textContent = `${job.result.title || 'Audiobook'} Master M4B Ready!`;
+        this.successMeta.textContent = `Master Audiobook: ${job.result.size_mb} MB • AAC High Quality with TOC`;
+        this.btnPipelineDownloadM4B.style.display = 'inline-flex';
+        this.btnPipelineDownloadM4B.href = job.result.download_url;
+      }
     }
   }
 
@@ -1945,6 +1956,28 @@ class NovelCastStudio {
   }
 
   async stitchActiveChapter() {
+    const curChap = this.state.chaptersList.find(c => c.file === this.state.activeChapter);
+    const title = curChap ? curChap.title : this.state.activeChapter;
+
+    // Reset Progress Modal UI
+    this.modalPipelineProgress.classList.remove('hidden');
+    this.pipelineSuccessBanner.classList.add('hidden');
+    this.pipelineProgressBar.style.width = '0%';
+    this.pipelineProgressPct.textContent = '0%';
+    this.pipelineStepName.textContent = `🎧 Stitching: ${title}`;
+    this.pipelineProgressSubtitle.textContent = 'Concatenating audio chunks and applying natural pauses...';
+    this.pipelineLogsContainer.innerHTML = `<div class="log-line info">[System] Starting MP3 stitching for ${title}...</div>`;
+    this.logItemCount.textContent = '1 message';
+    this.pipelineModalTitle.textContent = `🎧 Stitching Chapter MP3: ${title}`;
+    this.pipelineModalSubtitle.textContent = 'Pydub audio concatenation with loudness normalization (-16 dBFS)...';
+
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) stepGrid.style.display = 'none';
+
+    this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
+    this.btnPausePipeline.disabled = true; // Stitching is fast local process
+    this.btnStopPipeline.disabled = false;
+
     try {
       const payload = {
         project_id: this.state.activeProject,
@@ -1952,25 +1985,42 @@ class NovelCastStudio {
         speaker_change_ms: parseInt(this.sliderSpeakerChange.value),
         same_speaker_ms: parseInt(this.sliderSameSpeaker.value)
       };
-      this.btnStitchActiveChapter.textContent = '⚙ Stitching...';
       const resp = await fetch('/api/tasks/stitch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await resp.json();
-      this.btnStitchActiveChapter.textContent = '🎧 Stitch Chapter MP3';
-      if (data.success) {
-        alert('Chapter MP3 stitched successfully!');
+      if (data.job_id) {
+        this.currentJobId = data.job_id;
+        this.pollJobStatus(data.job_id);
       }
     } catch (e) {
-      this.btnStitchActiveChapter.textContent = '🎧 Stitch Chapter MP3';
-      alert('Stitching failed.');
+      this.pipelineStepName.textContent = '❌ Failed to start stitching.';
+      this.pipelineProgressSubtitle.textContent = String(e);
     }
   }
 
   async stitchAllChapters() {
-    this.btnStitchAllChapters.textContent = '⚙ Stitching All...';
+    // Reset Progress Modal UI
+    this.modalPipelineProgress.classList.remove('hidden');
+    this.pipelineSuccessBanner.classList.add('hidden');
+    this.pipelineProgressBar.style.width = '0%';
+    this.pipelineProgressPct.textContent = '0%';
+    this.pipelineStepName.textContent = `🎧 Stitching All Chapters`;
+    this.pipelineProgressSubtitle.textContent = 'Concatenating chapter scripts into audio tracks...';
+    this.pipelineLogsContainer.innerHTML = `<div class="log-line info">[System] Starting batch MP3 stitching for all chapters...</div>`;
+    this.logItemCount.textContent = '1 message';
+    this.pipelineModalTitle.textContent = `🎧 Batch Stitching All Chapter Tracks`;
+    this.pipelineModalSubtitle.textContent = 'Pydub multi-chapter stitching with pause timing...';
+
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) stepGrid.style.display = 'none';
+
+    this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
+    this.btnPausePipeline.disabled = true;
+    this.btnStopPipeline.disabled = false;
+
     try {
       const payload = {
         project_id: this.state.activeProject,
@@ -1983,13 +2033,13 @@ class NovelCastStudio {
         body: JSON.stringify(payload)
       });
       const data = await resp.json();
-      this.btnStitchAllChapters.textContent = '🎧 Stitch All Chapters';
-      if (data.success) {
-        alert(`Successfully stitched ${data.stitched_chapters.length} chapters!`);
+      if (data.job_id) {
+        this.currentJobId = data.job_id;
+        this.pollJobStatus(data.job_id);
       }
     } catch (e) {
-      this.btnStitchAllChapters.textContent = '🎧 Stitch All Chapters';
-      alert('Stitching failed.');
+      this.pipelineStepName.textContent = '❌ Failed to start stitching.';
+      this.pipelineProgressSubtitle.textContent = String(e);
     }
   }
 
@@ -2086,7 +2136,27 @@ class NovelCastStudio {
   }
 
   async packageMasterM4B() {
-    this.btnPackageMasterM4B.textContent = '⚙ Compiling M4B...';
+    const title = this.txtBookTitle.value || 'NovelCast Audiobook';
+
+    // Reset Progress Modal UI
+    this.modalPipelineProgress.classList.remove('hidden');
+    this.pipelineSuccessBanner.classList.add('hidden');
+    this.pipelineProgressBar.style.width = '0%';
+    this.pipelineProgressPct.textContent = '0%';
+    this.pipelineStepName.textContent = `📦 Packaging Master M4B`;
+    this.pipelineProgressSubtitle.textContent = 'Initializing FFmpeg packaging pipeline...';
+    this.pipelineLogsContainer.innerHTML = `<div class="log-line info">[System] Starting master M4B packaging for ${title}...</div>`;
+    this.logItemCount.textContent = '1 message';
+    this.pipelineModalTitle.textContent = `📦 Packaging Master M4B Audiobook: ${title}`;
+    this.pipelineModalSubtitle.textContent = 'TOC metadata, chapter marks, AAC stream & cover art embedding...';
+
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) stepGrid.style.display = 'none';
+
+    this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
+    this.btnPausePipeline.disabled = true;
+    this.btnStopPipeline.disabled = false;
+
     try {
       const payload = {
         project_id: this.state.activeProject,
@@ -2101,17 +2171,13 @@ class NovelCastStudio {
         body: JSON.stringify(payload)
       });
       const data = await resp.json();
-      this.btnPackageMasterM4B.textContent = '📦 Compile Master M4B Audiobook';
-
-      if (data.success) {
-        this.exportResultCard.classList.remove('hidden');
-        this.exportTitle.textContent = `${this.txtBookTitle.value} Ready!`;
-        this.exportMeta.textContent = `Size: ${data.size_mb} MB • AAC ${this.txtBitrate.value}`;
-        this.btnDownloadM4B.href = data.download_url;
+      if (data.job_id) {
+        this.currentJobId = data.job_id;
+        this.pollJobStatus(data.job_id);
       }
     } catch (e) {
-      this.btnPackageMasterM4B.textContent = '📦 Compile Master M4B Audiobook';
-      alert('M4B compilation failed.');
+      this.pipelineStepName.textContent = '❌ Failed to start packaging.';
+      this.pipelineProgressSubtitle.textContent = String(e);
     }
   }
 
