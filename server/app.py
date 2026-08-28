@@ -1067,62 +1067,131 @@ def cancel_job(job_id: str):
     job["logs"].append("🛑 Stop request received. Terminating job...")
     return {"success": True, "status": "stopped"}
 
-@app.post("/api/tasks/generate")
-def batch_generate_audio(req: GenerateTaskRequest):
-    """Batch synthesizes speech audio chunks for a chapter or entire project with multi-worker acceleration."""
-    pinfo = resolve_project_dir(req.project_id)
-    scripts_dir = pinfo["path"]
-    cache_dir = pinfo["cache"]
+def _run_synthesis_job_worker(job_id: str, req: GenerateTaskRequest):
+    job = jobs_db[job_id]
+    try:
+        pinfo = resolve_project_dir(req.project_id)
+        scripts_dir = pinfo["path"]
+        cache_dir = pinfo["cache"]
 
-    vb = VoiceBank(voice_bank_dir="voice_bank")
-    vb.auto_discover_voices()
-    
-    remote_url = req.remote_url if req.mode == "remote" else None
-    engine = get_engine(req.engine, remote_url=remote_url, cache_dir=cache_dir, workers=req.workers)
+        vb = VoiceBank(voice_bank_dir="voice_bank")
+        vb.auto_discover_voices()
+        remote_url = req.remote_url if req.mode == "remote" else None
+        engine = get_engine(req.engine, remote_url=remote_url, cache_dir=cache_dir, workers=req.workers)
 
-    target_files = []
-    if req.chapter_id:
-        target_files = [f"{req.chapter_id}.json" if not req.chapter_id.endswith(".json") else req.chapter_id]
-    else:
-        target_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
+        target_files = []
+        if req.chapter_id:
+            target_files = [f"{req.chapter_id}.json" if not req.chapter_id.endswith(".json") else req.chapter_id]
+        else:
+            target_files = sorted([f for f in os.listdir(scripts_dir) if f.endswith(".json")])
 
-    total_chunks = 0
-    generated_chunks = 0
-    cached_chunks = 0
+        all_scripts = []
+        total_segments_count = 0
+        for tf in target_files:
+            s_path = os.path.join(scripts_dir, tf)
+            if not os.path.exists(s_path):
+                continue
+            with open(s_path, "r", encoding="utf-8") as fp:
+                s_data = json.load(fp)
+                if isinstance(s_data, dict) and "chapter_id" not in s_data:
+                    s_data["chapter_id"] = os.path.splitext(tf)[0]
+                cscript = ChapterScript(**s_data)
+                all_scripts.append(cscript)
+                total_segments_count += len(cscript.segments)
 
-    for tf in target_files:
-        s_path = os.path.join(scripts_dir, tf)
-        if not os.path.exists(s_path):
-            continue
-        with open(s_path, "r", encoding="utf-8") as fp:
-            s_data = json.load(fp)
-            cscript = ChapterScript(**s_data)
+        job["total_items"] = total_segments_count
+        job["current_item"] = 0
+        job["status"] = "running"
+        target_name = req.chapter_id or f"{len(all_scripts)} Chapters"
+        job["step_name"] = f"Synthesizing Speech ({target_name})"
+        job["logs"].append(f"Starting multi-worker synthesis on {req.engine} ({req.mode} mode) for {total_segments_count} lines...")
 
-        missing_segs = []
-        for s in cscript.segments:
-            cpath = engine.get_cache_path(s)
-            total_chunks += 1
-            if os.path.exists(cpath) and os.path.getsize(cpath) > 100:
-                cached_chunks += 1
-            else:
-                missing_segs.append(s)
+        def check_cancelled() -> bool:
+            return bool(job.get("cancel_requested", False))
 
-        if missing_segs:
-            sub_script = ChapterScript(
-                title=cscript.title,
-                book=cscript.book,
-                chapter_id=cscript.chapter_id,
-                segments=missing_segs
+        def check_paused() -> bool:
+            return bool(job.get("pause_requested", False))
+
+        processed_so_far = 0
+        generated_count = 0
+        cached_count = 0
+
+        for cs in all_scripts:
+            if check_cancelled():
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Synthesis stopped by user.")
+                return
+
+            def on_progress(cur, tot, seg, is_cached, success):
+                nonlocal processed_so_far, generated_count, cached_count
+                if check_cancelled():
+                    job["status"] = "stopped"
+                    return
+
+                processed_so_far += 1
+                job["current_item"] = processed_so_far
+                pct = round((processed_so_far / max(total_segments_count, 1)) * 100.0, 1)
+                job["progress_pct"] = min(pct, 100.0)
+
+                status_str = "cached" if is_cached else ("✓ synthesized" if success else "✗ failed")
+                if is_cached:
+                    cached_count += 1
+                elif success:
+                    generated_count += 1
+
+                txt_snip = seg.text[:35] + ("..." if len(seg.text) > 35 else "")
+                job["logs"].append(f"[{job['progress_pct']}%] #{seg.id} ({seg.speaker}): \"{txt_snip}\" [{status_str}]")
+
+            engine.batch_synthesize(
+                cs, vb, language="es",
+                progress_callback=on_progress,
+                is_cancelled=check_cancelled,
+                is_paused=check_paused
             )
-            audio_results = engine.batch_synthesize(sub_script, vb)
-            generated_chunks += sum(1 for a in audio_results if a and os.path.exists(a))
 
-    return {
-        "success": True,
-        "total_chunks": total_chunks,
-        "newly_generated": generated_chunks,
-        "already_cached": cached_chunks
+            if check_cancelled():
+                job["status"] = "stopped"
+                job["logs"].append("🛑 Synthesis stopped by user.")
+                return
+
+        job["status"] = "completed"
+        job["progress_pct"] = 100.0
+        job["logs"].append(f"🎉 Speech synthesis complete! {generated_count} newly generated, {cached_count} already cached.")
+        job["result"] = {
+            "total_chunks": total_segments_count,
+            "newly_generated": generated_count,
+            "already_cached": cached_count
+        }
+
+    except Exception as e:
+        jobs_db[job_id]["status"] = "failed"
+        jobs_db[job_id]["error"] = str(e)
+        jobs_db[job_id]["logs"].append(f"❌ Synthesis error: {str(e)}")
+
+@app.post("/api/tasks/generate")
+def batch_generate_audio(req: GenerateTaskRequest, background_tasks: BackgroundTasks):
+    """Batch synthesizes speech audio chunks asynchronously with live progress tracking and pause/cancel support."""
+    job_id = f"job_synth_{int(time.time())}_{req.project_id}"
+    jobs_db[job_id] = {
+        "job_id": job_id,
+        "type": "chapter_synthesis",
+        "project_id": req.project_id,
+        "chapter_id": req.chapter_id,
+        "status": "pending",
+        "step": 1,
+        "total_steps": 1,
+        "step_name": "Initializing Speech Synthesis",
+        "progress_pct": 0.0,
+        "current_item": 0,
+        "total_items": 0,
+        "pause_requested": False,
+        "cancel_requested": False,
+        "logs": [f"Initializing speech synthesis for {req.chapter_id or req.project_id}..."],
+        "result": None,
+        "error": None
     }
+    background_tasks.add_task(_run_synthesis_job_worker, job_id, req)
+    return {"success": True, "job_id": job_id, "status": "started"}
 @app.post("/api/tasks/stitch")
 def stitch_project_chapter(req: StitchRequest):
     """Stitches chapter scripts into MP3 tracks."""

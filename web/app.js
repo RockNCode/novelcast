@@ -711,6 +711,9 @@ class NovelCastStudio {
 
     this.pipelineModalTitle.textContent = `🚀 Producing: ${bookTitle || projectId}`;
 
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) stepGrid.style.display = 'grid';
+
     this.resetStepCards();
     this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
     this.btnPausePipeline.disabled = false;
@@ -811,7 +814,18 @@ class NovelCastStudio {
     const pct = Math.min(Math.max(job.progress_pct || 0, 0), 100);
     this.pipelineProgressBar.style.width = `${pct}%`;
     this.pipelineProgressPct.textContent = `${Math.round(pct)}%`;
-    this.pipelineStepName.textContent = `Step ${job.step}/4: ${job.step_name}`;
+
+    const isSingleTask = (job.type === 'chapter_synthesis' || job.total_steps === 1);
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) {
+      stepGrid.style.display = isSingleTask ? 'none' : 'grid';
+    }
+
+    if (isSingleTask) {
+      this.pipelineStepName.textContent = job.step_name || 'Synthesizing Speech Audio';
+    } else {
+      this.pipelineStepName.textContent = `Step ${job.step}/4: ${job.step_name}`;
+    }
 
     if (job.status === 'paused') {
       this.pipelineProgressSubtitle.textContent = '⏸ Pipeline is paused. Click Resume to continue.';
@@ -826,24 +840,26 @@ class NovelCastStudio {
       this.pipelineProgressSubtitle.textContent = job.logs[job.logs.length - 1] || 'Processing...';
     }
 
-    // Update Steps
-    for (let s = 1; s <= 4; s++) {
-      const card = document.getElementById(`stepCard${s}`);
-      const tag = document.getElementById(`step${s}Status`);
-      if (!card || !tag) continue;
+    // Update Steps if 4-step pipeline
+    if (!isSingleTask) {
+      for (let s = 1; s <= 4; s++) {
+        const card = document.getElementById(`stepCard${s}`);
+        const tag = document.getElementById(`step${s}Status`);
+        if (!card || !tag) continue;
 
-      if (s < job.step) {
-        card.className = 'step-card completed';
-        tag.className = 'step-status-tag completed';
-        tag.textContent = '✓ Done';
-      } else if (s === job.step) {
-        card.className = 'step-card active';
-        tag.className = 'step-status-tag active';
-        tag.textContent = job.status === 'completed' ? '✓ Done' : (job.status === 'paused' ? 'Paused' : (job.status === 'stopped' ? 'Stopped' : 'Active'));
-      } else {
-        card.className = 'step-card';
-        tag.className = 'step-status-tag';
-        tag.textContent = 'Pending';
+        if (s < job.step) {
+          card.className = 'step-card completed';
+          tag.className = 'step-status-tag completed';
+          tag.textContent = '✓ Done';
+        } else if (s === job.step) {
+          card.className = 'step-card active';
+          tag.className = 'step-status-tag active';
+          tag.textContent = job.status === 'completed' ? '✓ Done' : (job.status === 'paused' ? 'Paused' : (job.status === 'stopped' ? 'Stopped' : 'Active'));
+        } else {
+          card.className = 'step-card';
+          tag.className = 'step-status-tag';
+          tag.textContent = 'Pending';
+        }
       }
     }
 
@@ -1978,7 +1994,28 @@ class NovelCastStudio {
   }
 
   async synthesizeActiveChapter() {
-    this.btnSynthesizeChapter.textContent = '⚙ Synthesizing...';
+    const curChap = this.state.chaptersList.find(c => c.file === this.state.activeChapter);
+    const title = curChap ? curChap.title : this.state.activeChapter;
+
+    // Reset Progress Modal UI
+    this.modalPipelineProgress.classList.remove('hidden');
+    this.pipelineSuccessBanner.classList.add('hidden');
+    this.pipelineProgressBar.style.width = '0%';
+    this.pipelineProgressPct.textContent = '0%';
+    this.pipelineStepName.textContent = `⚡ Synthesizing: ${title}`;
+    this.pipelineProgressSubtitle.textContent = 'Connecting to synthesis engine...';
+    this.pipelineLogsContainer.innerHTML = `<div class="log-line info">[System] Starting speech synthesis for ${title}...</div>`;
+    this.logItemCount.textContent = '1 message';
+    this.pipelineModalTitle.textContent = `⚡ Synthesizing Chapter: ${title}`;
+    this.pipelineModalSubtitle.textContent = 'Live GPU speech synthesis worker pool...';
+
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) stepGrid.style.display = 'none';
+
+    this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
+    this.btnPausePipeline.disabled = false;
+    this.btnStopPipeline.disabled = false;
+
     try {
       const payload = {
         project_id: this.state.activeProject,
@@ -1994,19 +2031,36 @@ class NovelCastStudio {
         body: JSON.stringify(payload)
       });
       const data = await resp.json();
-      this.btnSynthesizeChapter.innerHTML = '<span>⚡</span> Synthesize Chapter';
-      if (data.success) {
-        await this.loadChapterScript(this.state.activeChapter);
-        alert(`Chapter synthesized! (${data.newly_generated} lines generated, ${data.already_cached} cached)`);
+      if (data.job_id) {
+        this.currentJobId = data.job_id;
+        this.pollJobStatus(data.job_id);
       }
     } catch (e) {
-      this.btnSynthesizeChapter.innerHTML = '<span>⚡</span> Synthesize Chapter';
-      alert('Synthesis failed.');
+      this.pipelineStepName.textContent = '❌ Failed to start synthesis.';
+      this.pipelineProgressSubtitle.textContent = String(e);
     }
   }
 
   async synthesizeAllChapters() {
-    this.btnSynthesizeAllChapters.textContent = '⚙ Synthesizing All...';
+    // Reset Progress Modal UI
+    this.modalPipelineProgress.classList.remove('hidden');
+    this.pipelineSuccessBanner.classList.add('hidden');
+    this.pipelineProgressBar.style.width = '0%';
+    this.pipelineProgressPct.textContent = '0%';
+    this.pipelineStepName.textContent = `⚡ Synthesizing All Chapters`;
+    this.pipelineProgressSubtitle.textContent = 'Connecting to synthesis engine...';
+    this.pipelineLogsContainer.innerHTML = `<div class="log-line info">[System] Starting batch synthesis for all missing chapter lines...</div>`;
+    this.logItemCount.textContent = '1 message';
+    this.pipelineModalTitle.textContent = `⚡ Batch Synthesizing All Chapters`;
+    this.pipelineModalSubtitle.textContent = 'Live GPU multi-chapter synthesis...';
+
+    const stepGrid = document.querySelector('.pipeline-steps-grid');
+    if (stepGrid) stepGrid.style.display = 'none';
+
+    this.btnPausePipeline.innerHTML = '<span>⏸</span> Pause';
+    this.btnPausePipeline.disabled = false;
+    this.btnStopPipeline.disabled = false;
+
     try {
       const payload = {
         project_id: this.state.activeProject,
@@ -2021,15 +2075,13 @@ class NovelCastStudio {
         body: JSON.stringify(payload)
       });
       const data = await resp.json();
-      this.btnSynthesizeAllChapters.innerHTML = '<span>⚡</span> Synthesize All Missing Lines';
-      if (data.success) {
-        await this.loadProject();
-        this.renderChapterChecklist();
-        alert(`All chapters synthesized! (${data.newly_generated} lines generated, ${data.already_cached} cached)`);
+      if (data.job_id) {
+        this.currentJobId = data.job_id;
+        this.pollJobStatus(data.job_id);
       }
     } catch (e) {
-      this.btnSynthesizeAllChapters.innerHTML = '<span>⚡</span> Synthesize All Missing Lines';
-      alert('Batch synthesis failed.');
+      this.pipelineStepName.textContent = '❌ Failed to start synthesis.';
+      this.pipelineProgressSubtitle.textContent = String(e);
     }
   }
 
