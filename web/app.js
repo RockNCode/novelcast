@@ -216,6 +216,7 @@ class NovelCastStudio {
     this.chkAIFixSpeakers = document.getElementById('chkAIFixSpeakers');
     this.chkAIFixInstructs = document.getElementById('chkAIFixInstructs');
     this.chkAIFixTokens = document.getElementById('chkAIFixTokens');
+    this.inputAIFixStoryLore = document.getElementById('inputAIFixStoryLore');
     this.aiFixProgressSection = document.getElementById('aiFixProgressSection');
     this.aiFixStatusText = document.getElementById('aiFixStatusText');
     this.aiFixProgressPct = document.getElementById('aiFixProgressPct');
@@ -2347,6 +2348,13 @@ class NovelCastStudio {
       this.aiFixCurrentChapterName.textContent = curChap ? curChap.title : 'Current Chapter';
     }
 
+    if (this.inputAIFixStoryLore) {
+      const savedLore = localStorage.getItem(`novelcast_story_lore_${this.state.activeProject}`);
+      if (savedLore !== null) {
+        this.inputAIFixStoryLore.value = savedLore;
+      }
+    }
+
     this.aiFixProgressSection.classList.add('hidden');
     this.aiFixDiffList.innerHTML = '<div class="diff-placeholder">Click "Run AI Director" to begin...</div>';
     this.aiFixChangesCount.textContent = '0 corrections';
@@ -2367,6 +2375,11 @@ class NovelCastStudio {
     const refineSpeakers = this.chkAIFixSpeakers.checked;
     const refineInstructs = this.chkAIFixInstructs.checked;
     const insertTokens = this.chkAIFixTokens.checked;
+    const storyLore = this.inputAIFixStoryLore ? this.inputAIFixStoryLore.value.trim() : '';
+
+    if (this.inputAIFixStoryLore) {
+      localStorage.setItem(`novelcast_story_lore_${this.state.activeProject}`, storyLore);
+    }
 
     this.btnSubmitAIFix.disabled = true;
     this.btnSubmitAIFix.innerHTML = '<span>⏳</span> Directing Script with AI...';
@@ -2381,6 +2394,7 @@ class NovelCastStudio {
         const payload = {
           provider_id: providerId,
           model: model,
+          story_lore: storyLore,
           refine_speakers: refineSpeakers,
           refine_instructs: refineInstructs,
           insert_audio_tokens: insertTokens,
@@ -2477,6 +2491,7 @@ class NovelCastStudio {
         const payload = {
           provider_id: providerId,
           model: model,
+          story_lore: storyLore,
           refine_speakers: refineSpeakers,
           refine_instructs: refineInstructs,
           insert_audio_tokens: insertTokens,

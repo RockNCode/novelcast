@@ -101,6 +101,7 @@ class LLMTestRequest(BaseModel):
 class AIDirectRequest(BaseModel):
     provider_id: Optional[str] = None
     model: Optional[str] = None
+    story_lore: Optional[str] = None
     batch_size: int = 25
     refine_speakers: bool = True
     refine_instructs: bool = True
@@ -1302,6 +1303,7 @@ def direct_chapter_script_api(
         script=script,
         candidate_characters=candidate_chars,
         vb=vb,
+        story_lore=req.story_lore,
         batch_size=req.batch_size,
         refine_speakers=req.refine_speakers,
         refine_instructs=req.refine_instructs,
@@ -1371,6 +1373,7 @@ def direct_all_chapters_api(
                 updated_script, diffs = director.direct_chapter_script(
                     script=script,
                     vb=vb,
+                    story_lore=req.story_lore,
                     batch_size=req.batch_size,
                     refine_speakers=req.refine_speakers,
                     refine_instructs=req.refine_instructs,

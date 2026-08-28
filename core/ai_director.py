@@ -36,23 +36,25 @@ Your task is to analyze sequential lines of a novel/audiobook chapter and accura
 3. Any expressive vocal audio tokens (ONLY when explicit laughing, crying, sighing, gasping, or groaning occurs).
 
 CRITICAL DIRECTIVE RULES:
-1. NARRATION VS DIALOGUE:
+1. POST-DIALOGUE NARRATION CLUES (CRITICAL):
+   - In novels, dialogue is frequently identified in the narrative line that IMMEDIATELY FOLLOWS the quotes (e.g. if lines [3] & [4] "Honorable huésped..." are followed by line [5] "las voces preocupadas de las hermanas se dejaron oír", attribute lines [3] and [4] to the sisters Ram and Rem, NOT to the person being addressed (Subaru) or unrelated characters).
+   - Always analyze surrounding narrative lines before and after dialogue turns.
+2. NARRATION VS DIALOGUE:
    - Third-person exposition, descriptions of actions, scene setting, and character thoughts MUST have:
      speaker: "Narrador", instruct: null, audio_token: null.
    - Spoken dialogue (dialogue dashes —, quotes «», or direct speech) MUST be attributed to the specific character speaking.
-2. REPORTING VERBS & SPEECH CLUES:
+3. REPORTING VERBS, HONORIFICS & NICKNAMES:
    - Check embedded or surrounding reporting verbs ("dijo X", "respondió ella", "preguntó Emilia", "murmuró la pequeña doncella", "añadió el marqués").
-   - Check character nicknames and speech patterns:
-     * Ram calls Subaru "Barusu" (sharp/sarcastic tone).
-     * Rem calls Subaru "Subaru-kun" (gentle/polite tone).
-     * Beatrice uses verbal tics ("supongo", "de hecho") and refers to herself as "Betty".
-     * Roswaal uses prolonged vowels ("Bueeeno", "¿está bieeen?") and refers to "señorita Emilia".
-     * Puck calls Emilia "Lia".
-3. CONVERSATIONAL ALTERNATION:
-   - In 2-person dialogues, spoken lines alternate between the two active characters unless interrupted by a third speaker.
-4. AUDIO TOKENS:
+   - Check character nicknames, honorifics, and speech patterns:
+     * Ram & Rem: Address the guest/Subaru as "Honorable huésped" or "Estimado huésped" (often speaking in twin sequence). Ram calls Subaru "Barusu" (sharp/sarcastic). Rem calls Subaru "Subaru-kun" (polite/gentle).
+     * Beatrice: Refers to herself as "Betty", ends sentences with verbal tics ("supongo", "de hecho").
+     * Roswaal: Prolonged vowels ("Bueeeno", "¿está bieeen?"), calls Emilia "señorita Emilia".
+     * Puck: Calls Emilia "Lia", cheerful spirit tone.
+4. CONVERSATIONAL ALTERNATION:
+   - In 2-person dialogues, spoken lines alternate between the active characters unless interrupted by a third speaker or narration.
+5. AUDIO TOKENS:
    - audio_token MUST be null by default. Only set "[laughter]" if chuckling/laughing, "[gasp]" if gasping/shock, "[sigh]" if sighing, "[groan]" if in physical pain.
-5. STRICT JSON OUTPUT:
+6. STRICT JSON OUTPUT:
    - Output ONLY a valid JSON array of objects with NO Markdown backticks, conversational filler, or commentary outside the JSON array.
 """
 
@@ -216,6 +218,7 @@ class AIDirector:
         script: ChapterScript,
         candidate_characters: Optional[List[Dict[str, Any]]] = None,
         vb: Optional[VoiceBank] = None,
+        story_lore: Optional[str] = None,
         batch_size: int = 20,
         refine_speakers: bool = True,
         refine_instructs: bool = True,
@@ -224,7 +227,7 @@ class AIDirector:
     ) -> Tuple[ChapterScript, List[Dict[str, Any]]]:
         """
         Runs the AI Director over the chapter segments in context-preserving batches
-        with lookbehind dialogue context and resilient JSON recovery.
+        with lookbehind dialogue context, story lore, and resilient JSON recovery.
         """
         # 1. Build candidates list
         if candidate_characters is None:
@@ -237,6 +240,11 @@ class AIDirector:
                 candidate_characters = []
 
         char_context = self._build_character_context(candidate_characters)
+        
+        lore_block = ""
+        if story_lore and story_lore.strip():
+            lore_block = f"\nSTORY SETTING & CHARACTER LORE:\n{story_lore.strip()}\n"
+
         segments = script.segments
         total_segs = len(segments)
         diff_changelog = []
@@ -275,7 +283,7 @@ class AIDirector:
                 batch_lines.append(f'[{seg.id}] "{clean_text}"')
 
             prompt = f"""{char_context}
-
+{lore_block}
 {context_block}LINES TO DIRECT (Lines {batch[0].id} - {batch[-1].id}):
 {chr(10).join(batch_lines)}
 
