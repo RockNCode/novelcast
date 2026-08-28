@@ -77,3 +77,6 @@ class BaseTTSEngine(ABC):
                 audio_files.append(None)
 
         return audio_files
+
+    # Backward-compatible alias
+    synthesize_chapter = batch_synthesize

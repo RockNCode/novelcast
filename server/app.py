@@ -1112,9 +1112,8 @@ def batch_generate_audio(req: GenerateTaskRequest):
                 chapter_id=cscript.chapter_id,
                 segments=missing_segs
             )
-            success = engine.synthesize_chapter(sub_script, vb)
-            if success:
-                generated_chunks += len(missing_segs)
+            audio_results = engine.batch_synthesize(sub_script, vb)
+            generated_chunks += sum(1 for a in audio_results if a and os.path.exists(a))
 
     return {
         "success": True,
