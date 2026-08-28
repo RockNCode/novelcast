@@ -30,23 +30,36 @@ VALID_INSTRUCT_TAGS = [
 AUDIO_TOKENS = ["[gasp]", "[laughter]", "[sigh]", "[groan]", "[pant]"]
 
 SYSTEM_PROMPT = """You are an expert Literary Audiobook Director and Dialogue Attribution Specialist.
-Your task is to analyze sequential segments of a chapter from a novel/audiobook and determine:
-1. Who is the TRUE speaker of each line (distinguishing Narration vs Spoken Dialogue vs Characters).
-2. The emotional tone / delivery instruct for speech synthesis.
-3. Any expressive vocal audio tokens to insert at the beginning of the line (e.g. [laughter], [gasp], [sigh], [groan], [pant]).
+Your task is to analyze sequential lines of a novel/audiobook chapter and accurately determine:
+1. The TRUE speaker of each line (distinguishing Third-Person Narration vs Character Spoken Dialogue).
+2. The emotional tone / delivery instruct for voice synthesis (OmniVoice / Qwen3 / CosyVoice).
+3. Any expressive vocal audio tokens (ONLY when explicit laughing, crying, sighing, gasping, or groaning occurs).
 
 CRITICAL DIRECTIVE RULES:
-- Third-person descriptions, exposition, and narrator voice MUST have speaker: "Narrador" and instruct: null.
-- Dialogue spoken by characters MUST be attributed to the exact matching Character Name from the Candidate Characters list.
-- Pay close attention to reporting verbs ("dijo X", "respondió ella", "preguntó el marqués"), dialogue alternation turns, nicknames, and context.
-- If a line contains laughter, crying, shock, sighing, or pain, select the appropriate audio token.
-- Output ONLY a valid JSON array of objects with NO conversational filler or markdown formatting outside the JSON.
+1. NARRATION VS DIALOGUE:
+   - Third-person exposition, descriptions of actions, scene setting, and character thoughts MUST have:
+     speaker: "Narrador", instruct: null, audio_token: null.
+   - Spoken dialogue (dialogue dashes —, quotes «», or direct speech) MUST be attributed to the specific character speaking.
+2. REPORTING VERBS & SPEECH CLUES:
+   - Check embedded or surrounding reporting verbs ("dijo X", "respondió ella", "preguntó Emilia", "murmuró la pequeña doncella", "añadió el marqués").
+   - Check character nicknames and speech patterns:
+     * Ram calls Subaru "Barusu" (sharp/sarcastic tone).
+     * Rem calls Subaru "Subaru-kun" (gentle/polite tone).
+     * Beatrice uses verbal tics ("supongo", "de hecho") and refers to herself as "Betty".
+     * Roswaal uses prolonged vowels ("Bueeeno", "¿está bieeen?") and refers to "señorita Emilia".
+     * Puck calls Emilia "Lia".
+3. CONVERSATIONAL ALTERNATION:
+   - In 2-person dialogues, spoken lines alternate between the two active characters unless interrupted by a third speaker.
+4. AUDIO TOKENS:
+   - audio_token MUST be null by default. Only set "[laughter]" if chuckling/laughing, "[gasp]" if gasping/shock, "[sigh]" if sighing, "[groan]" if in physical pain.
+5. STRICT JSON OUTPUT:
+   - Output ONLY a valid JSON array of objects with NO Markdown backticks, conversational filler, or commentary outside the JSON array.
 """
 
 class AIDirector:
     """
     Directs audiobook dialogue attribution and emotional synthesis
-    using modern LLMs (Ollama, LM Studio, DeepSeek, OpenAI, Groq, etc.).
+    using modern LLMs (Gemini, DeepSeek, OpenAI, Groq, Ollama, LM Studio, etc.).
     """
 
     def __init__(
@@ -98,7 +111,7 @@ class AIDirector:
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": self.provider.temperature or 0.2,
-                "max_tokens": 3000
+                "max_tokens": 4096
             }
 
             try:
@@ -115,7 +128,7 @@ class AIDirector:
                 "systemInstruction": {"parts": [{"text": system_content}]},
                 "generationConfig": {
                     "temperature": self.provider.temperature or 0.2,
-                    "maxOutputTokens": 3000
+                    "maxOutputTokens": 4096
                 }
             }
             resp_nat = requests.post(native_endpoint, json=native_payload, timeout=self.provider.timeout_seconds or 60)
@@ -139,7 +152,7 @@ class AIDirector:
                 {"role": "user", "content": prompt}
             ],
             "temperature": self.provider.temperature or 0.2,
-            "max_tokens": 3000
+            "max_tokens": 4096
         }
 
         resp = requests.post(
@@ -155,41 +168,63 @@ class AIDirector:
         return data["choices"][0]["message"]["content"].strip()
 
     def _parse_llm_json(self, raw_text: str) -> List[Dict[str, Any]]:
-        # Strip markdown code fencing if present
+        """
+        Robust JSON parser that handles markdown fencing, trailing commas,
+        and uses a resilient object-by-object fallback to salvage segments
+        if the LLM output is truncated or contains unescaped quotes.
+        """
         clean = raw_text.strip()
         if clean.startswith("```"):
             clean = re.sub(r"^```(?:json)?\s*", "", clean)
             clean = re.sub(r"\s*```$", "", clean)
         clean = clean.strip()
 
-        # Locate JSON array brackets
-        start_idx = clean.find("[")
-        end_idx = clean.rfind("]")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            clean = clean[start_idx:end_idx + 1]
+        # 1. Try standard JSON array parse
+        s_idx = clean.find("[")
+        e_idx = clean.rfind("]")
+        if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
+            candidate = clean[s_idx:e_idx + 1]
+            try:
+                return json.loads(candidate)
+            except Exception:
+                # Attempt syntax repair on trailing commas
+                candidate_repaired = re.sub(r",\s*\]", "]", candidate)
+                candidate_repaired = re.sub(r",\s*\}", "}", candidate_repaired)
+                try:
+                    return json.loads(candidate_repaired)
+                except Exception:
+                    pass
 
-        try:
-            return json.loads(clean)
-        except Exception:
-            # Try fixing trailing commas
-            clean_fixed = re.sub(r",\s*\]", "]", clean)
-            clean_fixed = re.sub(r",\s*\}", "}", clean_fixed)
-            return json.loads(clean_fixed)
+        # 2. Resilient Object-by-Object Regex Extractor (salvages every completed segment)
+        results = []
+        for m in re.finditer(r'\{[^{}]*"id"\s*:\s*(\d+)[^{}]*\}', raw_text):
+            chunk = m.group(0)
+            try:
+                results.append(json.loads(chunk))
+            except Exception:
+                # Repair trailing comma in single object
+                fixed = re.sub(r',\s*\}', '}', chunk)
+                try:
+                    results.append(json.loads(fixed))
+                except Exception:
+                    pass
+
+        return results
 
     def direct_chapter_script(
         self,
         script: ChapterScript,
         candidate_characters: Optional[List[Dict[str, Any]]] = None,
         vb: Optional[VoiceBank] = None,
-        batch_size: int = 25,
+        batch_size: int = 20,
         refine_speakers: bool = True,
         refine_instructs: bool = True,
         insert_audio_tokens: bool = True,
         progress_callback: Optional[Callable[[int, int, int, str], None]] = None
     ) -> Tuple[ChapterScript, List[Dict[str, Any]]]:
         """
-        Runs the AI Director over the chapter segments in context-preserving batches.
-        Returns the updated ChapterScript and a changelog diff list.
+        Runs the AI Director over the chapter segments in context-preserving batches
+        with lookbehind dialogue context and resilient JSON recovery.
         """
         # 1. Build candidates list
         if candidate_characters is None:
@@ -218,36 +253,38 @@ class AIDirector:
                     b_idx + 1,
                     total_batches,
                     len(diff_changelog),
-                    f"Analyzing lines {batch[0].id} to {batch[-1].id} ({b_idx + 1}/{total_batches})..."
+                    f"Directing lines {batch[0].id} to {batch[-1].id} ({b_idx + 1}/{total_batches})..."
                 )
 
-            # Build batch prompt
+            # Preceding lookbehind context (3 lines before this batch)
+            start_pos = b_idx * batch_size
+            lookbehind_lines = []
+            if start_pos > 0:
+                prev_segs = segments[max(0, start_pos - 3):start_pos]
+                for p_seg in prev_segs:
+                    lookbehind_lines.append(f'[{p_seg.id}] {p_seg.speaker}: "{p_seg.text}"')
+
+            context_block = ""
+            if lookbehind_lines:
+                context_block = "PREVIOUS CONVERSATION CONTEXT (Already directed):\n" + "\n".join(lookbehind_lines) + "\n\n"
+
+            # Target lines to direct (clean text without bias)
             batch_lines = []
             for seg in batch:
-                batch_lines.append(f'[{seg.id}] CurrentSpeaker: "{seg.speaker}" | Text: "{seg.text}"')
+                clean_text = re.sub(r'^\[(?:laughter|gasp|sigh|groan|pant)\]\s*', '', seg.text).strip()
+                batch_lines.append(f'[{seg.id}] "{clean_text}"')
 
             prompt = f"""{char_context}
 
-VALID DELIVERY INSTRUCT EXAMPLES (for OmniVoice / Qwen3 / CosyVoice):
-{json.dumps(VALID_INSTRUCT_TAGS, indent=2)}
-
-VALID AUDIO EXPRESSION TOKENS:
-[laughter], [gasp], [sigh], [groan], [pant], or null
-
-SEGMENTS TO DIRECT (Lines {batch[0].id} - {batch[-1].id}):
+{context_block}LINES TO DIRECT (Lines {batch[0].id} - {batch[-1].id}):
 {chr(10).join(batch_lines)}
 
 INSTRUCTIONS:
-Return a JSON array containing one object per input segment in this exact structure:
+Return a JSON array of objects for lines {batch[0].id} to {batch[-1].id}.
+Example format:
 [
-  {{
-    "id": <int>,
-    "speaker": "<Exact Candidate Name or 'Narrador'>",
-    "instruct": "<Valid delivery tags or null if Narrador>",
-    "audio_token": "<e.g. '[gasp]' or '[laughter]' or null>",
-    "speed": <float 0.85 to 1.15, default 1.0>,
-    "explanation": "<Brief explanation for this attribution>"
-  }}
+  {{"id": {batch[0].id}, "speaker": "Narrador", "instruct": null, "audio_token": null}},
+  {{"id": {batch[-1].id}, "speaker": "Subaru", "instruct": "male, teenager, moderate pitch", "audio_token": null}}
 ]
 """
             try:
@@ -261,8 +298,6 @@ Return a JSON array containing one object per input segment in this exact struct
                         new_speaker = fix.get("speaker") or seg.speaker
                         new_instruct = fix.get("instruct")
                         audio_tok = fix.get("audio_token")
-                        speed = fix.get("speed", seg.speed or 1.0)
-                        explanation = fix.get("explanation", "")
 
                         changed = False
                         old_spk = seg.speaker
@@ -274,23 +309,28 @@ Return a JSON array containing one object per input segment in this exact struct
                             seg.speaker = new_speaker
                             changed = True
 
-                        # Apply Audio Token (prepend [laughter], [gasp], etc.)
+                        # Clean any previous over-eager tokens
+                        clean_text = re.sub(r'^\[(?:laughter|gasp|sigh|groan|pant)\]\s*', '', seg.text).strip()
+
+                        # Apply Audio Token (only if valid and explicit)
                         if insert_audio_tokens and audio_tok and audio_tok in AUDIO_TOKENS:
-                            clean_t = re.sub(r'^\[(?:laughter|gasp|sigh|groan|pant)\]\s*', '', seg.text).strip()
-                            seg.text = f"{audio_tok} {clean_t}"
-                            if seg.text != old_text:
-                                changed = True
+                            seg.text = f"{audio_tok} {clean_text}"
+                        else:
+                            seg.text = clean_text
+
+                        if seg.text != old_text:
+                            changed = True
 
                         # Apply Instruct / Tone
                         if refine_instructs:
                             if seg.speaker.lower() == "narrador":
-                                seg.instruct = None
+                                if seg.instruct is not None:
+                                    seg.instruct = None
+                                    changed = True
                             elif new_instruct:
-                                seg.instruct = new_instruct
-                                changed = True
-                            if speed and speed != seg.speed:
-                                seg.speed = speed
-                                changed = True
+                                if seg.instruct != new_instruct:
+                                    seg.instruct = new_instruct
+                                    changed = True
 
                         if changed:
                             # Recompute hash for cache invalidation
@@ -301,8 +341,7 @@ Return a JSON array containing one object per input segment in this exact struct
                                 "new_speaker": seg.speaker,
                                 "text": seg.text,
                                 "old_instruct": old_inst,
-                                "new_instruct": seg.instruct,
-                                "explanation": explanation
+                                "new_instruct": seg.instruct
                             })
 
             except Exception as e:
