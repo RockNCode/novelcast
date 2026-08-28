@@ -193,6 +193,7 @@ class NovelCastStudio {
     this.btnSetAsDefaultProvider = document.getElementById('btnSetAsDefaultProvider');
     this.inputLLMAPIBase = document.getElementById('inputLLMAPIBase');
     this.inputLLMAPIKey = document.getElementById('inputLLMAPIKey');
+    this.inputLLMTimeout = document.getElementById('inputLLMTimeout');
     this.selectLLMDefaultModel = document.getElementById('selectLLMDefaultModel');
     this.inputLLMCustomModel = document.getElementById('inputLLMCustomModel');
     this.sliderLLMTemperature = document.getElementById('sliderLLMTemperature');
@@ -2144,6 +2145,9 @@ class NovelCastStudio {
     this.currentProviderDesc.textContent = prov.description || '';
     this.inputLLMAPIBase.value = prov.api_base || '';
     this.inputLLMAPIKey.value = prov.api_key || '';
+    if (this.inputLLMTimeout) {
+      this.inputLLMTimeout.value = prov.timeout_seconds || 120;
+    }
     this.sliderLLMTemperature.value = prov.temperature || 0.2;
     this.valLLMTemperature.textContent = prov.temperature || 0.2;
 
@@ -2244,7 +2248,8 @@ class NovelCastStudio {
           api_base: this.inputLLMAPIBase.value.trim(),
           api_key: this.inputLLMAPIKey.value.trim(),
           default_model: model,
-          temperature: parseFloat(this.sliderLLMTemperature.value)
+          temperature: parseFloat(this.sliderLLMTemperature.value),
+          timeout_seconds: parseInt(this.inputLLMTimeout ? this.inputLLMTimeout.value : '120', 10) || 120
         })
       });
       const data = await resp.json();
@@ -2277,7 +2282,8 @@ class NovelCastStudio {
           api_base: this.inputLLMAPIBase.value.trim(),
           api_key: this.inputLLMAPIKey.value.trim(),
           default_model: model,
-          temperature: parseFloat(this.sliderLLMTemperature.value)
+          temperature: parseFloat(this.sliderLLMTemperature.value),
+          timeout_seconds: parseInt(this.inputLLMTimeout ? this.inputLLMTimeout.value : '120', 10) || 120
         })
       });
       const data = await resp.json();

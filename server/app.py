@@ -92,6 +92,7 @@ class LLMUpdateConfigRequest(BaseModel):
     default_model: Optional[str] = None
     models: Optional[List[str]] = None
     temperature: Optional[float] = None
+    timeout_seconds: Optional[int] = None
 
 class LLMTestRequest(BaseModel):
     provider_id: str
@@ -1243,7 +1244,8 @@ def update_llm_config(req: LLMUpdateConfigRequest):
             api_key=req.api_key,
             default_model=req.default_model,
             models=req.models,
-            temperature=req.temperature
+            temperature=req.temperature,
+            timeout_seconds=req.timeout_seconds
         )
     return {"success": True, "config": mgr.config.model_dump()}
 

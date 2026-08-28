@@ -98,7 +98,7 @@ class LLMProviderConfig(BaseModel):
     models: List[str] = Field(default_factory=list)
     description: str = ""
     temperature: float = 0.2
-    timeout_seconds: int = 45
+    timeout_seconds: int = 120
 
 class LLMGlobalConfig(BaseModel):
     active_provider: str = "ollama"
@@ -178,7 +178,8 @@ class LLMConfigManager:
         api_key: Optional[str] = None,
         default_model: Optional[str] = None,
         models: Optional[List[str]] = None,
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
+        timeout_seconds: Optional[int] = None
     ):
         if provider_id not in self.config.providers:
             if provider_id in DEFAULT_PRESETS:
@@ -196,6 +197,7 @@ class LLMConfigManager:
         if default_model is not None: prov.default_model = default_model
         if models is not None: prov.models = models
         if temperature is not None: prov.temperature = temperature
+        if timeout_seconds is not None: prov.timeout_seconds = int(timeout_seconds)
         self.save()
 
     def test_connection(self, provider_id: str, model_override: Optional[str] = None) -> Dict[str, Any]:

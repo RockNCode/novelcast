@@ -115,7 +115,7 @@ class AIDirector:
             }
 
             try:
-                resp = requests.post(openai_endpoint, headers=headers, json=payload, timeout=self.provider.timeout_seconds or 60)
+                resp = requests.post(openai_endpoint, headers=headers, json=payload, timeout=self.provider.timeout_seconds or 120)
                 if resp.status_code == 200:
                     return resp.json()["choices"][0]["message"]["content"].strip()
             except Exception:
@@ -131,7 +131,7 @@ class AIDirector:
                     "maxOutputTokens": 4096
                 }
             }
-            resp_nat = requests.post(native_endpoint, json=native_payload, timeout=self.provider.timeout_seconds or 60)
+            resp_nat = requests.post(native_endpoint, json=native_payload, timeout=self.provider.timeout_seconds or 120)
             if resp_nat.status_code == 200:
                 data = resp_nat.json()
                 parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
@@ -159,7 +159,7 @@ class AIDirector:
             endpoint,
             headers=headers,
             json=payload,
-            timeout=self.provider.timeout_seconds or 60
+            timeout=self.provider.timeout_seconds or 120
         )
         if resp.status_code != 200:
             raise RuntimeError(f"LLM request failed (Status {resp.status_code}): {resp.text[:300]}")
