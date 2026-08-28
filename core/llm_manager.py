@@ -201,11 +201,99 @@ class LLMConfigManager:
     def test_connection(self, provider_id: str, model_override: Optional[str] = None) -> Dict[str, Any]:
         """
         Tests whether the specified LLM provider endpoint is reachable and responsive.
+        Supports OpenAI-compatible endpoints as well as native Google Gemini REST endpoints.
         """
         prov = self.get_provider(provider_id)
         model = model_override or prov.default_model
-        endpoint = f"{prov.api_base.rstrip('/')}/chat/completions"
+        
+        # Check if Google Gemini
+        is_gemini = (provider_id == "gemini") or ("generativelanguage.googleapis.com" in prov.api_base)
 
+        start_t = time.time()
+
+        # 1. Google Gemini Native & OpenAI Dual Protocol
+        if is_gemini:
+            # Normalize base
+            clean_base = prov.api_base.rstrip("/")
+            if "generativelanguage.googleapis.com" in clean_base and not clean_base.endswith("/openai"):
+                clean_base = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+            # Attempt 1: OpenAI-compatible endpoint
+            openai_endpoint = f"{clean_base}/chat/completions"
+            headers = {"Content-Type": "application/json"}
+            if prov.api_key:
+                headers["Authorization"] = f"Bearer {prov.api_key}"
+
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "You are a test assistant. Answer with 1 word: OK"},
+                    {"role": "user", "content": "ping"}
+                ],
+                "max_tokens": 10,
+                "temperature": 0.0
+            }
+
+            try:
+                resp = requests.post(openai_endpoint, headers=headers, json=payload, timeout=12)
+                latency_ms = round((time.time() - start_t) * 1000, 1)
+
+                if resp.status_code == 200:
+                    data = resp.json()
+                    reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    return {
+                        "success": True,
+                        "provider": provider_id,
+                        "model": model,
+                        "latency_ms": latency_ms,
+                        "reply": reply,
+                        "message": f"✓ Connected successfully to Gemini ({latency_ms}ms)"
+                    }
+            except Exception:
+                pass
+
+            # Attempt 2: Native Google Gemini REST Endpoint
+            try:
+                native_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={prov.api_key}"
+                native_payload = {
+                    "contents": [{"role": "user", "parts": [{"text": "ping"}]}],
+                    "generationConfig": {"temperature": 0.0, "maxOutputTokens": 10}
+                }
+                resp_nat = requests.post(native_endpoint, json=native_payload, timeout=12)
+                latency_ms = round((time.time() - start_t) * 1000, 1)
+
+                if resp_nat.status_code == 200:
+                    data = resp_nat.json()
+                    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
+                    reply = parts[0].get("text", "").strip() if parts else "OK"
+                    return {
+                        "success": True,
+                        "provider": provider_id,
+                        "model": model,
+                        "latency_ms": latency_ms,
+                        "reply": reply,
+                        "message": f"✓ Connected successfully to Google Gemini ({latency_ms}ms)"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "provider": provider_id,
+                        "model": model,
+                        "status_code": resp_nat.status_code,
+                        "latency_ms": latency_ms,
+                        "error": resp_nat.text[:200],
+                        "message": f"Gemini error ({resp_nat.status_code}): {resp_nat.text[:140]}"
+                    }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "provider": provider_id,
+                    "model": model,
+                    "message": f"Gemini connection failed: {str(e)}"
+                }
+
+        # 2. Standard OpenAI-Compatible Endpoints (Ollama, LM Studio, DeepSeek, OpenAI, Groq, OpenRouter, Custom)
+        endpoint = f"{prov.api_base.rstrip('/')}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if prov.api_key:
             headers["Authorization"] = f"Bearer {prov.api_key}"
@@ -220,7 +308,6 @@ class LLMConfigManager:
             "temperature": 0.0
         }
 
-        start_t = time.time()
         try:
             resp = requests.post(endpoint, headers=headers, json=payload, timeout=12)
             latency_ms = round((time.time() - start_t) * 1000, 1)

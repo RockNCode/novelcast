@@ -76,6 +76,57 @@ class AIDirector:
         return "\n".join(lines)
 
     def _call_llm(self, prompt: str, system_override: Optional[str] = None) -> str:
+        is_gemini = (self.provider.name.lower().find("gemini") != -1) or ("generativelanguage.googleapis.com" in self.provider.api_base)
+        system_content = system_override or SYSTEM_PROMPT
+
+        if is_gemini:
+            # Normalize base
+            clean_base = self.provider.api_base.rstrip("/")
+            if "generativelanguage.googleapis.com" in clean_base and not clean_base.endswith("/openai"):
+                clean_base = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+            # 1. Try OpenAI-compatible endpoint
+            openai_endpoint = f"{clean_base}/chat/completions"
+            headers = {"Content-Type": "application/json"}
+            if self.provider.api_key:
+                headers["Authorization"] = f"Bearer {self.provider.api_key}"
+
+            payload = {
+                "model": self.provider.default_model,
+                "messages": [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": self.provider.temperature or 0.2,
+                "max_tokens": 3000
+            }
+
+            try:
+                resp = requests.post(openai_endpoint, headers=headers, json=payload, timeout=self.provider.timeout_seconds or 60)
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"].strip()
+            except Exception:
+                pass
+
+            # 2. Fallback to Native Gemini REST endpoint
+            native_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.provider.default_model}:generateContent?key={self.provider.api_key}"
+            native_payload = {
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "systemInstruction": {"parts": [{"text": system_content}]},
+                "generationConfig": {
+                    "temperature": self.provider.temperature or 0.2,
+                    "maxOutputTokens": 3000
+                }
+            }
+            resp_nat = requests.post(native_endpoint, json=native_payload, timeout=self.provider.timeout_seconds or 60)
+            if resp_nat.status_code == 200:
+                data = resp_nat.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
+                if parts:
+                    return parts[0].get("text", "").strip()
+            raise RuntimeError(f"Google Gemini request failed (Status {resp_nat.status_code}): {resp_nat.text[:300]}")
+
+        # Standard OpenAI-Compatible Endpoints
         endpoint = f"{self.provider.api_base.rstrip('/')}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.provider.api_key:
@@ -84,7 +135,7 @@ class AIDirector:
         payload = {
             "model": self.provider.default_model,
             "messages": [
-                {"role": "system", "content": system_override or SYSTEM_PROMPT},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt}
             ],
             "temperature": self.provider.temperature or 0.2,
