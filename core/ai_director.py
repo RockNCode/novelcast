@@ -39,22 +39,28 @@ CRITICAL DIRECTIVE RULES:
 1. POST-DIALOGUE NARRATION CLUES (CRITICAL):
    - In novels, dialogue is frequently identified in the narrative line that IMMEDIATELY FOLLOWS the quotes (e.g. if lines [3] & [4] "Honorable huésped..." are followed by line [5] "las voces preocupadas de las hermanas se dejaron oír", attribute lines [3] and [4] to the sisters Ram and Rem, NOT to the person being addressed (Subaru) or unrelated characters).
    - Always analyze surrounding narrative lines before and after dialogue turns.
-2. NARRATION VS DIALOGUE:
+2. PROTAGONIST POV & NARRATIVE INTROSPECTION (CRITICAL):
+   - Light novels are narrated from the perspective of the protagonist (Subaru Natsuki) and the third-person Narrator.
+   - Descriptive narration, stream-of-consciousness, physical sensations, awakening from death, and internal thoughts without quotation marks (e.g. "recuperé la conciencia", "no siento mis extremidades", "odio el dolor", "me doy cuenta", "mi visión regresa") MUST be attributed to:
+     * speaker: "Narrador", instruct: null, audio_token: null.
+   - SECONDARY CHARACTERS (Rem, Emilia, Ram, Beatrice, Roswaal, Puck, Otto, Felt, etc.) NEVER NARRATE OR EXPERIENCE 1ST-PERSON SENSATIONS.
+   - Secondary characters ONLY speak when they are audibly addressing someone in direct dialogue (e.g. «quotes», —dashes, or conversational lines like "¡Honorable invitado, honorable invitado!"). NEVER attribute internal descriptions or introspective awakenings to secondary characters.
+3. NARRATION VS DIALOGUE:
    - Third-person exposition, descriptions of actions, scene setting, and character thoughts MUST have:
      speaker: "Narrador", instruct: null, audio_token: null.
    - Spoken dialogue (dialogue dashes —, quotes «», or direct speech) MUST be attributed to the specific character speaking.
-3. REPORTING VERBS, HONORIFICS & NICKNAMES:
+4. REPORTING VERBS, HONORIFICS & NICKNAMES:
    - Check embedded or surrounding reporting verbs ("dijo X", "respondió ella", "preguntó Emilia", "murmuró la pequeña doncella", "añadió el marqués").
    - Check character nicknames, honorifics, and speech patterns:
      * Ram & Rem: Address the guest/Subaru as "Honorable huésped" or "Estimado huésped" (often speaking in twin sequence). Ram calls Subaru "Barusu" (sharp/sarcastic). Rem calls Subaru "Subaru-kun" (polite/gentle).
      * Beatrice: Refers to herself as "Betty", ends sentences with verbal tics ("supongo", "de hecho").
      * Roswaal: Prolonged vowels ("Bueeeno", "¿está bieeen?"), calls Emilia "señorita Emilia".
      * Puck: Calls Emilia "Lia", cheerful spirit tone.
-4. CONVERSATIONAL ALTERNATION:
+5. CONVERSATIONAL ALTERNATION:
    - In 2-person dialogues, spoken lines alternate between the active characters unless interrupted by a third speaker or narration.
-5. AUDIO TOKENS:
+6. AUDIO TOKENS:
    - audio_token MUST be null by default. Only set "[laughter]" if chuckling/laughing, "[gasp]" if gasping/shock, "[sigh]" if sighing, "[groan]" if in physical pain.
-6. STRICT JSON OUTPUT:
+7. STRICT JSON OUTPUT:
    - Output ONLY a valid JSON array of objects with NO Markdown backticks, conversational filler, or commentary outside the JSON array.
 """
 
@@ -317,13 +323,30 @@ Example format:
                         old_inst = seg.instruct
                         old_text = seg.text
 
+                        # Clean any previous over-eager tokens
+                        clean_text = re.sub(r'^\[(?:laughter|gasp|sigh|groan|pant)\]\s*', '', seg.text).strip()
+
+                        # Structural Heuristic Guard: Prevent 1st-person introspective awakening narration
+                        # from being falsely assigned to secondary female/male characters (e.g. Rem, Emilia, Ram, Beatrice).
+                        is_quoted = bool(re.search(r'["«“―—–\-]', clean_text))
+                        is_introspective = bool(re.search(
+                            r'\b(?:recuperé|recupero|desperté|despierto|mis extremidades|mi garganta|'
+                            r'mis entrañas|mis piernas|mi sangre|mi vida|me estoy muriendo|no quiero morir|'
+                            r'odio todo|odio el dolor|me doy cuenta|mi visión|mi uña|mi brazo|mi cuerpo|'
+                            r'mis pulmones|un suspiro se escapa|escucho la voz de alguien|el significado no llega|'
+                            r'no lo entiendo|sentí un dolor|sentí que|abrí los ojos|cerré los ojos)\b',
+                            clean_text,
+                            re.IGNORECASE
+                        ))
+                        if not is_quoted and is_introspective and new_speaker.lower() not in ["narrador", "subaru"]:
+                            new_speaker = "Narrador"
+                            new_instruct = None
+                            audio_tok = None
+
                         # Apply Speaker Refinement
                         if refine_speakers and new_speaker and new_speaker != seg.speaker:
                             seg.speaker = new_speaker
                             changed = True
-
-                        # Clean any previous over-eager tokens
-                        clean_text = re.sub(r'^\[(?:laughter|gasp|sigh|groan|pant)\]\s*', '', seg.text).strip()
 
                         # Apply Audio Token (only if valid and explicit)
                         if insert_audio_tokens and audio_tok and audio_tok in AUDIO_TOKENS:
